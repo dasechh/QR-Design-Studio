@@ -4,7 +4,8 @@ import QRCode from "qrcode";
 import {
   QrCode, Type, ImagePlus, Copy, Trash2,
   FlipHorizontal2, FlipVertical2, BringToFront, SendToBack,
-  Save, FolderOpen, Download, LogOut, GripVertical,
+  Save, FolderOpen, Download, LogOut, GripVertical, GripHorizontal,
+  LayoutGrid,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -20,9 +21,12 @@ interface ToolbarProps {
   onLoad: (design: any) => void;
 }
 
+type Orientation = "vertical" | "horizontal";
+
 export function Toolbar({ canvas, onSave, onLoad }: ToolbarProps) {
   const { logout } = useAuth();
   const [pos, setPos] = useState({ x: 16, y: 80 });
+  const [orientation, setOrientation] = useState<Orientation>("vertical");
   const isDragging = useRef(false);
   const dragStart = useRef({ mouseX: 0, mouseY: 0, panelX: 0, panelY: 0 });
 
@@ -37,15 +41,9 @@ export function Toolbar({ canvas, onSave, onLoad }: ToolbarProps) {
   const onDragHandlePointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
     isDragging.current = true;
-    dragStart.current = {
-      mouseX: e.clientX,
-      mouseY: e.clientY,
-      panelX: pos.x,
-      panelY: pos.y,
-    };
+    dragStart.current = { mouseX: e.clientX, mouseY: e.clientY, panelX: pos.x, panelY: pos.y };
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
   };
-
   const onPointerMove = (e: React.PointerEvent) => {
     if (!isDragging.current) return;
     setPos({
@@ -53,10 +51,7 @@ export function Toolbar({ canvas, onSave, onLoad }: ToolbarProps) {
       y: dragStart.current.panelY + e.clientY - dragStart.current.mouseY,
     });
   };
-
-  const onPointerUp = () => {
-    isDragging.current = false;
-  };
+  const onPointerUp = () => { isDragging.current = false; };
 
   const addText = () => {
     if (!canvas) return;
@@ -113,33 +108,15 @@ export function Toolbar({ canvas, onSave, onLoad }: ToolbarProps) {
 
   const remove = () => {
     if (!canvas) return;
-    const activeObjects = canvas.getActiveObjects();
-    if (activeObjects.length) {
-      activeObjects.forEach((obj) => canvas.remove(obj));
-      canvas.discardActiveObject();
-      canvas.renderAll();
-    }
+    canvas.getActiveObjects().forEach((obj) => canvas.remove(obj));
+    canvas.discardActiveObject();
+    canvas.renderAll();
   };
 
-  const flipX = () => {
-    const obj = canvas?.getActiveObject();
-    if (obj) { obj.set({ flipX: !obj.flipX }); canvas?.renderAll(); }
-  };
-
-  const flipY = () => {
-    const obj = canvas?.getActiveObject();
-    if (obj) { obj.set({ flipY: !obj.flipY }); canvas?.renderAll(); }
-  };
-
-  const bringFront = () => {
-    const obj = canvas?.getActiveObject();
-    if (obj && canvas) { canvas.bringObjectToFront(obj); canvas.renderAll(); }
-  };
-
-  const sendBack = () => {
-    const obj = canvas?.getActiveObject();
-    if (obj && canvas) { canvas.sendObjectToBack(obj); canvas.renderAll(); }
-  };
+  const flipX = () => { const o = canvas?.getActiveObject(); if (o) { o.set({ flipX: !o.flipX }); canvas?.renderAll(); } };
+  const flipY = () => { const o = canvas?.getActiveObject(); if (o) { o.set({ flipY: !o.flipY }); canvas?.renderAll(); } };
+  const bringFront = () => { const o = canvas?.getActiveObject(); if (o && canvas) { canvas.bringObjectToFront(o); canvas.renderAll(); } };
+  const sendBack = () => { const o = canvas?.getActiveObject(); if (o && canvas) { canvas.sendObjectToBack(o); canvas.renderAll(); } };
 
   const exportImage = () => {
     if (!canvas) return;
@@ -154,19 +131,23 @@ export function Toolbar({ canvas, onSave, onLoad }: ToolbarProps) {
     { icon: QrCode, tooltip: "Добавить QR-код", onClick: () => setIsQrOpen(true) },
     { icon: Type, tooltip: "Добавить текст", onClick: addText },
     { icon: ImagePlus, tooltip: "Добавить изображение", onClick: addImage },
-    { divider: true },
+    null,
     { icon: Copy, tooltip: "Дублировать", onClick: duplicate },
     { icon: Trash2, tooltip: "Удалить", onClick: remove, danger: true },
-    { divider: true },
+    null,
     { icon: FlipHorizontal2, tooltip: "Отразить по горизонтали", onClick: flipX },
     { icon: FlipVertical2, tooltip: "Отразить по вертикали", onClick: flipY },
     { icon: BringToFront, tooltip: "На передний план", onClick: bringFront },
     { icon: SendToBack, tooltip: "На задний план", onClick: sendBack },
-    { divider: true },
+    null,
     { icon: FolderOpen, tooltip: "Мои дизайны", onClick: () => setIsLoadOpen(true) },
     { icon: Save, tooltip: "Сохранить дизайн", onClick: () => setIsSaveOpen(true) },
     { icon: Download, tooltip: "Экспортировать PNG", onClick: exportImage },
   ];
+
+  const isH = orientation === "horizontal";
+  const GripIcon = isH ? GripHorizontal : GripVertical;
+  const tooltipSide = isH ? "bottom" : "right";
 
   return (
     <>
@@ -176,135 +157,118 @@ export function Toolbar({ canvas, onSave, onLoad }: ToolbarProps) {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
       >
-        <div className="bg-card border border-border rounded-xl shadow-lg flex flex-col items-center py-2 gap-1 w-12 overflow-hidden">
+        <div className={`bg-card border border-border rounded-xl shadow-lg flex items-center gap-0.5 p-1.5 ${isH ? "flex-row" : "flex-col"}`}>
+          {/* Drag handle */}
           <div
-            className="w-10 flex items-center justify-center h-6 cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground transition-colors"
+            className={`flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground transition-colors cursor-grab active:cursor-grabbing ${isH ? "h-8 w-6 mr-0.5" : "w-8 h-6 mb-0.5"}`}
             onPointerDown={onDragHandlePointerDown}
           >
-            <GripVertical className="w-4 h-4" />
+            <GripIcon className="w-3.5 h-3.5" />
           </div>
 
-          <div className="w-8 h-px bg-border" />
+          {/* Orientation toggle */}
+          <Tooltip delayDuration={0}>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="w-8 h-8 rounded-lg text-muted-foreground hover:text-primary hover:bg-secondary"
+                onClick={() => setOrientation(isH ? "vertical" : "horizontal")}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side={tooltipSide} className="text-xs font-medium">
+              {isH ? "Вертикальный режим" : "Горизонтальный режим"}
+            </TooltipContent>
+          </Tooltip>
 
+          {/* Divider */}
+          <div className={isH ? "w-px h-6 bg-border mx-1" : "h-px w-6 bg-border my-1"} />
+
+          {/* Tools */}
           {tools.map((t, i) =>
-            t.divider ? (
-              <div key={`div-${i}`} className="w-8 h-px bg-border my-1" />
+            t === null ? (
+              <div key={`div-${i}`} className={isH ? "w-px h-6 bg-border mx-0.5" : "h-px w-6 bg-border my-0.5"} />
             ) : (
               <Tooltip key={i} delayDuration={0}>
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className={`w-9 h-9 rounded-lg ${t.danger ? "hover:bg-red-50 hover:text-red-600 text-muted-foreground" : "hover:bg-secondary hover:text-primary text-muted-foreground"}`}
+                    className={`w-8 h-8 rounded-lg ${t.danger ? "text-muted-foreground hover:text-red-500 hover:bg-red-50" : "text-muted-foreground hover:text-primary hover:bg-secondary"}`}
                     onClick={t.onClick}
                   >
                     <t.icon className="w-4 h-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="right" className="text-xs font-medium">
-                  {t.tooltip}
-                </TooltipContent>
+                <TooltipContent side={tooltipSide} className="text-xs font-medium">{t.tooltip}</TooltipContent>
               </Tooltip>
             )
           )}
 
-          <div className="flex-1 min-h-2" />
-          <div className="w-8 h-px bg-border" />
+          {/* Divider */}
+          <div className={isH ? "w-px h-6 bg-border mx-0.5" : "h-px w-6 bg-border my-0.5"} />
 
+          {/* Logout */}
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
-                className="w-9 h-9 rounded-lg text-muted-foreground hover:text-red-600 hover:bg-red-50"
+                className="w-8 h-8 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-50"
                 onClick={logout}
               >
                 <LogOut className="w-4 h-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="right" className="text-xs font-medium">Выйти</TooltipContent>
+            <TooltipContent side={tooltipSide} className="text-xs font-medium">Выйти</TooltipContent>
           </Tooltip>
         </div>
       </div>
 
       <Dialog open={isQrOpen} onOpenChange={setIsQrOpen}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Добавить QR-код</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Добавить QR-код</DialogTitle></DialogHeader>
           <div className="py-4">
-            <Input
-              placeholder="Введите URL или текст"
-              value={qrInput}
-              onChange={(e) => setQrInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addQr()}
-              autoFocus
-            />
+            <Input placeholder="Введите URL или текст" value={qrInput} onChange={(e) => setQrInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addQr()} autoFocus />
           </div>
-          <DialogFooter>
-            <Button onClick={addQr} disabled={!qrInput}>Сгенерировать</Button>
-          </DialogFooter>
+          <DialogFooter><Button onClick={addQr} disabled={!qrInput}>Сгенерировать</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={isSaveOpen} onOpenChange={setIsSaveOpen}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Сохранить дизайн</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Сохранить дизайн</DialogTitle></DialogHeader>
           <div className="py-4">
-            <Input
-              placeholder="Название дизайна"
-              value={saveTitle}
-              onChange={(e) => setSaveTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && saveTitle) {
-                  onSave(saveTitle);
-                  setIsSaveOpen(false);
-                }
-              }}
-              autoFocus
-            />
+            <Input placeholder="Название дизайна" value={saveTitle} onChange={(e) => setSaveTitle(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && saveTitle) { onSave(saveTitle); setIsSaveOpen(false); } }} autoFocus />
           </div>
           <DialogFooter>
-            <Button
-              onClick={() => {
-                if (saveTitle) { onSave(saveTitle); setIsSaveOpen(false); }
-              }}
-              disabled={!saveTitle}
-            >
-              Сохранить
-            </Button>
+            <Button onClick={() => { if (saveTitle) { onSave(saveTitle); setIsSaveOpen(false); } }} disabled={!saveTitle}>Сохранить</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={isLoadOpen} onOpenChange={setIsLoadOpen}>
         <DialogContent className="sm:max-w-2xl h-[600px] flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Мои дизайны</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Мои дизайны</DialogTitle></DialogHeader>
           <ScrollArea className="flex-1 -mx-6 px-6">
             <div className="grid grid-cols-3 gap-4 pb-4">
               {designs?.map((d) => (
-                <div
-                  key={d.id}
-                  className="group relative rounded-xl border border-border bg-card overflow-hidden hover:border-primary hover:shadow-md cursor-pointer transition-all"
-                  onClick={() => { onLoad(d); setIsLoadOpen(false); }}
-                >
+                <div key={d.id} className="rounded-xl border border-border bg-card overflow-hidden hover:border-primary hover:shadow-md cursor-pointer transition-all"
+                  onClick={() => { onLoad(d); setIsLoadOpen(false); }}>
                   <div className="aspect-[4/3] bg-muted/50 p-2">
                     {d.thumbnail && <img src={d.thumbnail} alt={d.title} className="w-full h-full object-contain" />}
                   </div>
                   <div className="p-3 border-t border-border">
                     <p className="font-medium text-sm truncate">{d.title}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{new Date(d.updatedAt).toLocaleDateString("ru")}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{new Date(d.updatedAt).toLocaleDateString("ru")}</p>
                   </div>
                 </div>
               ))}
               {!designs?.length && (
-                <div className="col-span-3 text-center py-12 text-muted-foreground text-sm">
-                  У вас пока нет сохранённых дизайнов
-                </div>
+                <div className="col-span-3 text-center py-12 text-muted-foreground text-sm">У вас пока нет сохранённых дизайнов</div>
               )}
             </div>
           </ScrollArea>

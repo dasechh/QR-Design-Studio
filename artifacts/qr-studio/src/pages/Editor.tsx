@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Canvas, IText, FabricImage, Shadow, filters } from "fabric";
+import { Canvas, FabricImage, Shadow } from "fabric";
 import QRCode from "qrcode";
 import { useAuth } from "@workspace/replit-auth-web";
-import { useCreateDesign, useUpdateDesign, useListDesigns, getListDesignsQueryKey } from "@workspace/api-client-react";
+import { useCreateDesign, useUpdateDesign, getListDesignsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
@@ -24,33 +24,20 @@ export default function Editor() {
   useEffect(() => {
     if (!canvasRef.current) return;
 
-    const initCanvas = new Canvas(canvasRef.current, {
+    const c = new Canvas(canvasRef.current, {
       width: 800,
       height: 600,
       backgroundColor: "#ffffff",
       preserveObjectStacking: true,
     });
 
-    const refresh = () => {
-      const obj = initCanvas.getActiveObject();
-      setActiveObject(obj ? Object.assign(Object.create(Object.getPrototypeOf(obj)), obj) : null);
-    };
+    c.on("selection:created", (e) => setActiveObject(e.selected?.[0] ?? null));
+    c.on("selection:updated", (e) => setActiveObject(e.selected?.[0] ?? null));
+    c.on("selection:cleared", () => setActiveObject(null));
 
-    initCanvas.on("selection:created", refresh);
-    initCanvas.on("selection:updated", refresh);
-    initCanvas.on("selection:cleared", () => setActiveObject(null));
-    initCanvas.on("object:modified", refresh);
-    initCanvas.on("object:scaling", refresh);
-
-    setCanvas(initCanvas);
-    return () => { initCanvas.dispose(); };
+    setCanvas(c);
+    return () => { c.dispose(); };
   }, []);
-
-  const refreshActive = () => {
-    if (!canvas) return;
-    const obj = canvas.getActiveObject();
-    setActiveObject(obj ? Object.assign(Object.create(Object.getPrototypeOf(obj)), obj) : null);
-  };
 
   const handleSave = async (title: string) => {
     if (!canvas) return;
@@ -102,7 +89,6 @@ export default function Editor() {
       canvas.add(img);
       canvas.setActiveObject(img);
       canvas.renderAll();
-      refreshActive();
     } catch {
       toast({ title: "Ошибка обновления QR", variant: "destructive" });
     }
@@ -112,7 +98,7 @@ export default function Editor() {
     <div className="flex h-screen w-full bg-background overflow-hidden">
       <div className="flex-1 flex flex-col relative overflow-hidden">
         <header className="h-14 border-b border-border bg-card flex items-center justify-between px-4 shrink-0 z-10 shadow-sm">
-          <div className="font-semibold text-sm text-foreground">QR Studio</div>
+          <div className="font-semibold text-sm">QR Studio</div>
           {user && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               {user.profileImageUrl && (
@@ -123,25 +109,16 @@ export default function Editor() {
           )}
         </header>
 
-        <main className="flex-1 overflow-auto flex items-center justify-center p-8 z-10 bg-background">
+        <main className="flex-1 overflow-auto flex items-center justify-center p-8 bg-background">
           <div className="shadow-xl ring-1 ring-border rounded-sm overflow-hidden">
             <canvas ref={canvasRef} />
           </div>
         </main>
 
-        <Toolbar
-          canvas={canvas}
-          onSave={handleSave}
-          onLoad={handleLoad}
-        />
+        <Toolbar canvas={canvas} onSave={handleSave} onLoad={handleLoad} />
       </div>
 
-      <PropertiesPanel
-        canvas={canvas}
-        activeObject={activeObject}
-        onQrUpdate={handleQrUpdate}
-        onRefresh={refreshActive}
-      />
+      <PropertiesPanel canvas={canvas} activeObject={activeObject} onQrUpdate={handleQrUpdate} />
     </div>
   );
 }
