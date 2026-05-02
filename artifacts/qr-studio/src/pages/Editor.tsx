@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, useCallback } from "react";
-import { Canvas, Rect, IText, FabricImage, Group, Shadow, filters } from "fabric";
+import { useEffect, useRef, useState } from "react";
+import { Canvas, IText, FabricImage, Shadow, filters } from "fabric";
 import QRCode from "qrcode";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useCreateDesign, useUpdateDesign, useListDesigns, getListDesignsQueryKey } from "@workspace/api-client-react";
@@ -21,54 +21,53 @@ export default function Editor() {
   const createDesign = useCreateDesign();
   const updateDesign = useUpdateDesign();
 
-  // Initialize Canvas
   useEffect(() => {
     if (!canvasRef.current) return;
-    
+
     const initCanvas = new Canvas(canvasRef.current, {
       width: 800,
       height: 600,
-      backgroundColor: '#ffffff',
+      backgroundColor: "#ffffff",
       preserveObjectStacking: true,
     });
 
-    initCanvas.on('selection:created', (e) => setActiveObject(e.selected?.[0] || null));
-    initCanvas.on('selection:updated', (e) => setActiveObject(e.selected?.[0] || null));
-    initCanvas.on('selection:cleared', () => setActiveObject(null));
-    initCanvas.on('object:modified', () => {
-      setActiveObject(initCanvas.getActiveObject());
-    });
+    const refresh = () => {
+      const obj = initCanvas.getActiveObject();
+      setActiveObject(obj ? Object.assign(Object.create(Object.getPrototypeOf(obj)), obj) : null);
+    };
+
+    initCanvas.on("selection:created", refresh);
+    initCanvas.on("selection:updated", refresh);
+    initCanvas.on("selection:cleared", () => setActiveObject(null));
+    initCanvas.on("object:modified", refresh);
+    initCanvas.on("object:scaling", refresh);
 
     setCanvas(initCanvas);
-
-    return () => {
-      initCanvas.dispose();
-    };
+    return () => { initCanvas.dispose(); };
   }, []);
+
+  const refreshActive = () => {
+    if (!canvas) return;
+    const obj = canvas.getActiveObject();
+    setActiveObject(obj ? Object.assign(Object.create(Object.getPrototypeOf(obj)), obj) : null);
+  };
 
   const handleSave = async (title: string) => {
     if (!canvas) return;
-    
     try {
-      const json = canvas.toJSON();
+      const json = canvas.toJSON(["isQR", "qrContent"]);
       const thumbnail = canvas.toDataURL({ format: "png", quality: 0.5, multiplier: 0.25 });
-      
       if (currentDesignId) {
-        await updateDesign.mutateAsync({
-          id: currentDesignId,
-          data: { title, canvasData: json, thumbnail }
-        });
-        toast({ title: "Design updated successfully" });
+        await updateDesign.mutateAsync({ id: currentDesignId, data: { title, canvasData: json, thumbnail } });
+        toast({ title: "Дизайн обновлён" });
       } else {
-        const res = await createDesign.mutateAsync({
-          data: { title, canvasData: json, thumbnail }
-        });
+        const res = await createDesign.mutateAsync({ data: { title, canvasData: json, thumbnail } });
         setCurrentDesignId(res.id);
-        toast({ title: "Design saved successfully" });
+        toast({ title: "Дизайн сохранён" });
       }
       queryClient.invalidateQueries({ queryKey: getListDesignsQueryKey() });
-    } catch (error) {
-      toast({ title: "Error saving design", variant: "destructive" });
+    } catch {
+      toast({ title: "Ошибка при сохранении", variant: "destructive" });
     }
   };
 
@@ -77,45 +76,71 @@ export default function Editor() {
     canvas.loadFromJSON(design.canvasData).then(() => {
       canvas.renderAll();
       setCurrentDesignId(design.id);
-      toast({ title: "Design loaded" });
+      toast({ title: "Дизайн загружен" });
     });
+  };
+
+  const handleQrUpdate = async (oldObj: any, newContent: string) => {
+    if (!canvas) return;
+    try {
+      const dataUrl = await QRCode.toDataURL(newContent, { width: 200, margin: 1 });
+      const img = await FabricImage.fromURL(dataUrl);
+      img.set({
+        left: oldObj.left,
+        top: oldObj.top,
+        scaleX: oldObj.scaleX,
+        scaleY: oldObj.scaleY,
+        angle: oldObj.angle,
+        shadow: oldObj.shadow ? new Shadow(oldObj.shadow) : undefined,
+        opacity: oldObj.opacity,
+        flipX: oldObj.flipX,
+        flipY: oldObj.flipY,
+      });
+      (img as any).isQR = true;
+      (img as any).qrContent = newContent;
+      canvas.remove(oldObj);
+      canvas.add(img);
+      canvas.setActiveObject(img);
+      canvas.renderAll();
+      refreshActive();
+    } catch {
+      toast({ title: "Ошибка обновления QR", variant: "destructive" });
+    }
   };
 
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden">
-      <Toolbar 
-        canvas={canvas} 
-        onSave={handleSave}
-        onLoad={handleLoad}
-      />
-      
-      <div className="flex-1 flex flex-col relative overflow-hidden bg-secondary/30">
-        <div className="absolute inset-0 pattern-checkerboard opacity-20 pointer-events-none" 
-             style={{ backgroundSize: '20px 20px', backgroundImage: 'linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px)' }} 
-        />
-        
-        <header className="h-14 border-b border-border bg-card/50 backdrop-blur flex items-center justify-between px-4 shrink-0 z-10">
-          <div className="font-semibold text-sm">Untitled Design</div>
+      <div className="flex-1 flex flex-col relative overflow-hidden">
+        <header className="h-14 border-b border-border bg-card flex items-center justify-between px-4 shrink-0 z-10 shadow-sm">
+          <div className="font-semibold text-sm text-foreground">QR Studio</div>
           {user && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               {user.profileImageUrl && (
-                <img src={user.profileImageUrl} alt="Avatar" className="w-6 h-6 rounded-full" />
+                <img src={user.profileImageUrl} alt="Avatar" className="w-7 h-7 rounded-full ring-2 ring-border" />
               )}
               <span>{user.firstName || user.email}</span>
             </div>
           )}
         </header>
 
-        <main className="flex-1 overflow-auto flex items-center justify-center p-8 z-10">
-          <div className="shadow-2xl ring-1 ring-border/50 rounded-sm overflow-hidden">
+        <main className="flex-1 overflow-auto flex items-center justify-center p-8 z-10 bg-background">
+          <div className="shadow-xl ring-1 ring-border rounded-sm overflow-hidden">
             <canvas ref={canvasRef} />
           </div>
         </main>
+
+        <Toolbar
+          canvas={canvas}
+          onSave={handleSave}
+          onLoad={handleLoad}
+        />
       </div>
 
-      <PropertiesPanel 
-        canvas={canvas} 
-        activeObject={activeObject} 
+      <PropertiesPanel
+        canvas={canvas}
+        activeObject={activeObject}
+        onQrUpdate={handleQrUpdate}
+        onRefresh={refreshActive}
       />
     </div>
   );
