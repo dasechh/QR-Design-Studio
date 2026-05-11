@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Canvas, Shadow, FabricImage, filters } from "fabric";
-import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
@@ -24,8 +23,30 @@ interface Props {
 
 const FONTS = ["Arial", "Georgia", "Times New Roman", "Courier New", "Verdana", "Helvetica", "Tahoma", "Impact", "Palatino Linotype", "Trebuchet MS"];
 const SHAPE_TOOLS = ["rect", "ellipse", "line", "triangle"];
-const DRAW_TOOLS = ["pencil", "eraser"];
 
+// ── Helpers ────────────────────────────────────────────────────────────────────
+const hexToRgba = (hex: string, opacity: number): string => {
+  if (opacity >= 100) return hex;
+  const h = hex.replace("#", "").padEnd(6, "0");
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return `rgba(${r},${g},${b},${(opacity / 100).toFixed(2)})`;
+};
+
+const parseHexAlpha = (color: string): [hex: string, opacity: number] => {
+  if (!color || color === "transparent") return ["#000000", 0];
+  const m = color.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/);
+  if (m) {
+    const hex = "#" + [m[1], m[2], m[3]].map((n) => parseInt(n).toString(16).padStart(2, "0")).join("");
+    const a = m[4] !== undefined ? Math.round(parseFloat(m[4]) * 100) : 100;
+    return [hex, a];
+  }
+  if (color.startsWith("#")) return [color.slice(0, 7), 100];
+  return ["#000000", 100];
+};
+
+// ── UI atoms ───────────────────────────────────────────────────────────────────
 function Divider() { return <div className="h-px bg-border -mx-4" />; }
 function Sec({ title }: { title: string }) {
   return <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{title}</p>;
@@ -67,14 +88,21 @@ function SliderRow({ label, value, min, max, step = 1, onChange }: {
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
         <Lbl>{label}</Lbl>
-        <span className="text-[10px] text-muted-foreground tabular-nums">{typeof value === 'number' ? (step < 1 ? value.toFixed(2) : Math.round(value)) : value}</span>
+        <span className="text-[10px] text-muted-foreground tabular-nums">
+          {step < 1 ? value.toFixed(2) : Math.round(value)}
+        </span>
       </div>
       <Slider value={[value]} min={min} max={max} step={step} onValueChange={([v]) => onChange(v)} />
     </div>
   );
 }
 
-export function PropertiesPanel({ canvas, activeObject, activeTool, penColor, onPenColorChange, penSize, onPenSizeChange, shapeColor, onShapeColorChange, onQrUpdate }: Props) {
+// ── Main component ─────────────────────────────────────────────────────────────
+export function PropertiesPanel({
+  canvas, activeObject, activeTool,
+  penColor, onPenColorChange, penSize, onPenSizeChange,
+  shapeColor, onShapeColorChange, onQrUpdate,
+}: Props) {
   const isText = activeObject?.type === "i-text" || activeObject?.type === "text";
   const isImage = activeObject?.type === "image";
   const isRect = activeObject?.type === "rect";
@@ -86,9 +114,12 @@ export function PropertiesPanel({ canvas, activeObject, activeTool, penColor, on
     canvas.renderAll();
   };
 
+  // ── State ──────────────────────────────────────────────────────────────────
   const [fill, setFill] = useState("#3b82f6");
+  const [fillOpacity, setFillOpacity] = useState(100);
   const [opacity, setOpacity] = useState(100);
   const [stroke, setStroke] = useState("#000000");
+  const [strokeOpacity, setStrokeOpacity] = useState(100);
   const [strokeWidth, setStrokeWidth] = useState(0);
   const [strokeDash, setStrokeDash] = useState<"solid" | "dashed" | "dotted">("solid");
   const [rx, setRx] = useState(0);
@@ -115,20 +146,39 @@ export function PropertiesPanel({ canvas, activeObject, activeTool, penColor, on
   const [qrContent, setQrContent] = useState("");
   const [qrBusy, setQrBusy] = useState(false);
 
-  // Sync only when a genuinely different object is selected
+  // ── Sync from active object ────────────────────────────────────────────────
   useEffect(() => {
     if (!activeObject) return;
-    const f = activeObject.fill;
-    setFill(typeof f === "string" ? f : "#3b82f6");
+
+    // Fill + fill opacity
+    const rawFill = typeof activeObject.fill === "string" ? activeObject.fill : "#3b82f6";
+    const [fillHex, fillA] = parseHexAlpha(rawFill);
+    setFill(fillHex);
+    setFillOpacity(fillA);
+
+    // Object-level opacity
     setOpacity(Math.round((activeObject.opacity ?? 1) * 100));
-    setStroke(activeObject.stroke || "#000000");
+
+    // Stroke + stroke opacity
+    const rawStroke = activeObject.stroke || "#000000";
+    const [strokeHex, strokeA] = parseHexAlpha(rawStroke);
+    setStroke(strokeHex);
+    setStrokeOpacity(strokeA);
+
     setStrokeWidth(activeObject.strokeWidth || 0);
     const dash = activeObject.strokeDashArray;
     setStrokeDash(!dash?.length ? "solid" : dash[0] <= 3 ? "dotted" : "dashed");
     setRx(activeObject.rx || 0);
+
     const sh = activeObject.shadow;
     setShadowOn(!!sh);
-    if (sh) { setShadowColor(sh.color || "#000000"); setShadowBlur(sh.blur ?? 10); setShadowX(sh.offsetX ?? 5); setShadowY(sh.offsetY ?? 5); }
+    if (sh) {
+      setShadowColor(sh.color || "#000000");
+      setShadowBlur(sh.blur ?? 10);
+      setShadowX(sh.offsetX ?? 5);
+      setShadowY(sh.offsetY ?? 5);
+    }
+
     if (isImage) {
       const fl: any[] = (activeObject as any).filters || [];
       setFBr(0); setFCo(0); setFSa(0); setFBl(0); setFGs(false); setFSe(false);
@@ -141,7 +191,12 @@ export function PropertiesPanel({ canvas, activeObject, activeTool, penColor, on
         if (f.type === "Sepia") setFSe(true);
       }
     }
+
     if (isText) {
+      const rawTFill = typeof activeObject.fill === "string" ? activeObject.fill : "#000000";
+      const [tfHex, tfA] = parseHexAlpha(rawTFill);
+      setFill(tfHex);
+      setFillOpacity(tfA);
       setFontFamily(activeObject.fontFamily || "Arial");
       setFontSize(activeObject.fontSize || 32);
       setBold(activeObject.fontWeight === "bold");
@@ -151,11 +206,23 @@ export function PropertiesPanel({ canvas, activeObject, activeTool, penColor, on
       setAlign(activeObject.textAlign || "left");
       setLh(activeObject.lineHeight ?? 1.16);
       setCs(activeObject.charSpacing ?? 0);
-      const tf = activeObject.fill;
-      setFill(typeof tf === "string" ? tf : "#000000");
     }
+
     if (isQR) setQrContent((activeObject as any).qrContent || "");
-  }, [activeObject]); // Only re-sync on actual object change
+  }, [activeObject]);
+
+  // ── Apply helpers ──────────────────────────────────────────────────────────
+  const applyFill = (hex = fill, op = fillOpacity) => {
+    if (!activeObject || !canvas) return;
+    activeObject.set("fill", hexToRgba(hex, op));
+    canvas.renderAll();
+  };
+
+  const applyStroke = (hex = stroke, op = strokeOpacity) => {
+    if (!activeObject || !canvas) return;
+    activeObject.set("stroke", hexToRgba(hex, op));
+    canvas.renderAll();
+  };
 
   const applyFilters = (opts: { br?: number; co?: number; sa?: number; bl?: number; gs?: boolean; se?: boolean }) => {
     if (!activeObject || !canvas || !isImage) return;
@@ -179,14 +246,14 @@ export function PropertiesPanel({ canvas, activeObject, activeTool, penColor, on
     canvas.renderAll();
   };
 
-  // ── No object selected: show tool-specific settings ──────────────────────
+  // ── No object selected ─────────────────────────────────────────────────────
   if (!activeObject) {
-    const isDrawTool = DRAW_TOOLS.includes(activeTool);
     const isShapeTool = SHAPE_TOOLS.includes(activeTool);
+    const isPencil = activeTool === "pencil";
 
-    if (isDrawTool || isShapeTool) {
+    if (isShapeTool || isPencil) {
       const toolNames: Record<string, string> = {
-        pencil: "Карандаш", eraser: "Ластик",
+        pencil: "Карандаш",
         rect: "Прямоугольник", ellipse: "Эллипс",
         triangle: "Треугольник", line: "Линия",
       };
@@ -197,37 +264,25 @@ export function PropertiesPanel({ canvas, activeObject, activeTool, penColor, on
             <p className="text-[11px] text-muted-foreground mt-0.5">{toolNames[activeTool]}</p>
           </div>
           <div className="p-4 space-y-4">
-            {activeTool === "pencil" && (
+            {isPencil && (
               <>
                 <div className="space-y-2">
                   <Sec title="Цвет кисти" />
                   <ColorPicker value={penColor} onChange={onPenColorChange} />
                 </div>
                 <Divider />
+                <SliderRow label="Толщина кисти" value={penSize} min={1} max={50} onChange={onPenSizeChange} />
               </>
             )}
-            {(activeTool === "pencil" || activeTool === "eraser") && (
-              <SliderRow
-                label={activeTool === "eraser" ? "Размер ластика" : "Толщина кисти"}
-                value={penSize} min={1} max={50}
-                onChange={onPenSizeChange}
-              />
-            )}
-            {isShapeTool && activeTool !== "line" && (
+            {isShapeTool && (
               <div className="space-y-2">
-                <Sec title="Цвет заливки" />
+                <Sec title={activeTool === "line" ? "Цвет линии" : "Цвет заливки"} />
                 <ColorPicker value={shapeColor} onChange={onShapeColorChange} />
+                <p className="text-xs text-muted-foreground pt-1">
+                  Кликните и перетяните на холсте чтобы нарисовать фигуру
+                </p>
               </div>
             )}
-            {activeTool === "line" && (
-              <div className="space-y-2">
-                <Sec title="Цвет линии" />
-                <ColorPicker value={shapeColor} onChange={onShapeColorChange} />
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground pt-2">
-              {isShapeTool ? "Кликните и перетяните на холсте чтобы нарисовать фигуру" : "Рисуйте на холсте. Нажмите Esc для выхода."}
-            </p>
           </div>
         </div>
       );
@@ -244,43 +299,50 @@ export function PropertiesPanel({ canvas, activeObject, activeTool, penColor, on
     );
   }
 
-  // ── Object selected: show properties ─────────────────────────────────────
+  // ── Object selected ────────────────────────────────────────────────────────
   return (
     <div className="w-64 bg-card border-l border-border shrink-0 flex flex-col overflow-y-auto">
-      <div className="px-4 py-3 border-b border-border">
+      <div className="px-4 py-3 border-b border-border shrink-0">
         <p className="font-semibold text-sm">Свойства</p>
         <p className="text-[11px] text-muted-foreground capitalize mt-0.5">{activeObject.type}</p>
       </div>
 
       <div className="flex flex-col gap-4 p-4 text-sm">
 
-        {/* Fill */}
+        {/* ── Fill ── */}
         {!isImage && (
           <>
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <Sec title={isText ? "Цвет текста" : "Заливка"} />
-              <ColorPicker value={fill} onChange={(v) => { setFill(v); apply("fill", v); }} />
+              <ColorPicker value={fill}
+                onChange={(v) => { setFill(v); applyFill(v, fillOpacity); }} />
+              <SliderRow label="Непрозрачность заливки" value={fillOpacity} min={0} max={100}
+                onChange={(v) => { setFillOpacity(v); applyFill(fill, v); }} />
             </div>
             <Divider />
           </>
         )}
 
-        {/* Opacity */}
-        <SliderRow label="Непрозрачность" value={opacity} min={0} max={100}
+        {/* ── Object opacity ── */}
+        <SliderRow label="Прозрачность объекта" value={opacity} min={0} max={100}
           onChange={(v) => { setOpacity(v); apply("opacity", v / 100); }} />
 
         <Divider />
 
-        {/* Stroke */}
+        {/* ── Stroke ── */}
         <div className="space-y-2.5">
           <Sec title="Обводка" />
-          <ColorPicker value={stroke} onChange={(v) => { setStroke(v); apply("stroke", v); }} />
+          <ColorPicker value={stroke}
+            onChange={(v) => { setStroke(v); applyStroke(v, strokeOpacity); }} />
+          <SliderRow label="Непрозрачность обводки" value={strokeOpacity} min={0} max={100}
+            onChange={(v) => { setStrokeOpacity(v); applyStroke(stroke, v); }} />
           <div className="flex items-center gap-2">
+            <Lbl>Толщина</Lbl>
             <div className="flex-1">
               <Slider value={[strokeWidth]} min={0} max={30} step={1}
                 onValueChange={([v]) => { setStrokeWidth(v); apply("strokeWidth", v); }} />
             </div>
-            <span className="text-xs text-muted-foreground w-5 text-right">{strokeWidth}</span>
+            <span className="text-xs text-muted-foreground w-5 text-right tabular-nums">{strokeWidth}</span>
           </div>
           <Select value={strokeDash} onValueChange={(v: any) => {
             setStrokeDash(v);
@@ -295,18 +357,18 @@ export function PropertiesPanel({ canvas, activeObject, activeTool, penColor, on
           </Select>
         </div>
 
-        {/* Border radius (rect only) */}
+        {/* ── Border radius (rect only) ── */}
         {isRect && (
           <>
             <Divider />
-            <SliderRow label="Скругление" value={rx} min={0} max={200}
+            <SliderRow label="Скругление углов" value={rx} min={0} max={200}
               onChange={(v) => { setRx(v); activeObject.set({ rx: v, ry: v }); canvas?.renderAll(); }} />
           </>
         )}
 
         <Divider />
 
-        {/* Shadow */}
+        {/* ── Shadow ── */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <Sec title="Тень" />
@@ -327,7 +389,7 @@ export function PropertiesPanel({ canvas, activeObject, activeTool, penColor, on
           )}
         </div>
 
-        {/* Filters (images) */}
+        {/* ── Filters (images) ── */}
         {isImage && (
           <>
             <Divider />
@@ -344,10 +406,10 @@ export function PropertiesPanel({ canvas, activeObject, activeTool, penColor, on
                 </label>
               </div>
               {([
-                { label: "Яркость", val: fBr, set: setFBr, key: "br", min: -100, max: 100 },
-                { label: "Контраст", val: fCo, set: setFCo, key: "co", min: -100, max: 100 },
-                { label: "Насыщен.", val: fSa, set: setFSa, key: "sa", min: -100, max: 100 },
-                { label: "Размытие", val: fBl, set: setFBl, key: "bl", min: 0, max: 100 },
+                { label: "Яркость",    val: fBr, set: setFBr, key: "br", min: -100, max: 100 },
+                { label: "Контраст",   val: fCo, set: setFCo, key: "co", min: -100, max: 100 },
+                { label: "Насыщен.",   val: fSa, set: setFSa, key: "sa", min: -100, max: 100 },
+                { label: "Размытие",   val: fBl, set: setFBl, key: "bl", min: 0,    max: 100 },
               ] as any[]).map(({ label, val, set, key, min, max }) => (
                 <SliderRow key={key} label={label} value={Math.round(val * 100)} min={min} max={max}
                   onChange={(v) => { const n = v / 100; set(n); applyFilters({ [key]: n }); }} />
@@ -356,7 +418,7 @@ export function PropertiesPanel({ canvas, activeObject, activeTool, penColor, on
           </>
         )}
 
-        {/* QR content */}
+        {/* ── QR content ── */}
         {isQR && (
           <>
             <Divider />
@@ -372,7 +434,7 @@ export function PropertiesPanel({ canvas, activeObject, activeTool, penColor, on
           </>
         )}
 
-        {/* Text properties */}
+        {/* ── Text properties ── */}
         {isText && (
           <>
             <Divider />
@@ -380,7 +442,9 @@ export function PropertiesPanel({ canvas, activeObject, activeTool, penColor, on
               <Sec title="Текст" />
               <Select value={fontFamily} onValueChange={(v) => { setFontFamily(v); apply("fontFamily", v); }}>
                 <SelectTrigger className="h-7 text-xs bg-muted/40"><SelectValue /></SelectTrigger>
-                <SelectContent>{FONTS.map((f) => <SelectItem key={f} value={f} style={{ fontFamily: f }}>{f}</SelectItem>)}</SelectContent>
+                <SelectContent>
+                  {FONTS.map((f) => <SelectItem key={f} value={f} style={{ fontFamily: f }}>{f}</SelectItem>)}
+                </SelectContent>
               </Select>
               <div className="flex items-center gap-2">
                 <Lbl>Размер</Lbl>
@@ -390,9 +454,9 @@ export function PropertiesPanel({ canvas, activeObject, activeTool, penColor, on
               </div>
               <div className="flex gap-1">
                 {([
-                  { I: Bold, a: bold, fn: () => { const v = !bold; setBold(v); apply("fontWeight", v ? "bold" : "normal"); } },
-                  { I: Italic, a: italic, fn: () => { const v = !italic; setItalic(v); apply("fontStyle", v ? "italic" : "normal"); } },
-                  { I: Underline, a: uline, fn: () => { const v = !uline; setUline(v); apply("underline", v); } },
+                  { I: Bold,          a: bold,   fn: () => { const v = !bold;   setBold(v);   apply("fontWeight", v ? "bold"   : "normal"); } },
+                  { I: Italic,        a: italic, fn: () => { const v = !italic; setItalic(v); apply("fontStyle",  v ? "italic" : "normal"); } },
+                  { I: Underline,     a: uline,  fn: () => { const v = !uline;  setUline(v);  apply("underline",  v); } },
                   { I: Strikethrough, a: strike, fn: () => { const v = !strike; setStrike(v); apply("linethrough", v); } },
                 ]).map(({ I, a, fn }, idx) => (
                   <Button key={idx} variant={a ? "default" : "outline"} size="icon" className="h-7 flex-1 p-0" onClick={fn}>
@@ -400,9 +464,18 @@ export function PropertiesPanel({ canvas, activeObject, activeTool, penColor, on
                   </Button>
                 ))}
               </div>
-              <ToggleGroup type="single" value={align} onValueChange={(v) => { if (v) { setAlign(v); apply("textAlign", v); } }} className="justify-start gap-1">
-                {[{ v: "left", I: AlignLeft }, { v: "center", I: AlignCenter }, { v: "right", I: AlignRight }, { v: "justify", I: AlignJustify }].map(({ v, I }) => (
-                  <ToggleGroupItem key={v} value={v} className="h-7 flex-1 p-0"><I className="w-3 h-3" /></ToggleGroupItem>
+              <ToggleGroup type="single" value={align}
+                onValueChange={(v) => { if (v) { setAlign(v); apply("textAlign", v); } }}
+                className="justify-start gap-1">
+                {[
+                  { v: "left",    I: AlignLeft    },
+                  { v: "center",  I: AlignCenter  },
+                  { v: "right",   I: AlignRight   },
+                  { v: "justify", I: AlignJustify },
+                ].map(({ v, I }) => (
+                  <ToggleGroupItem key={v} value={v} className="h-7 flex-1 p-0">
+                    <I className="w-3 h-3" />
+                  </ToggleGroupItem>
                 ))}
               </ToggleGroup>
               <div className="grid grid-cols-2 gap-2">

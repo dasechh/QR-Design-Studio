@@ -6,7 +6,7 @@ import {
   FlipHorizontal2, FlipVertical2, BringToFront, SendToBack,
   Save, FolderOpen, Download, LogOut,
   GripVertical, GripHorizontal, LayoutGrid,
-  Square, Circle, Minus, Triangle, Pencil, Eraser,
+  Square, Circle, Minus, Triangle, Pencil,
   Undo2, Redo2, FilePlus2, MousePointer2,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -71,8 +71,7 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
     const input = document.createElement("input");
     input.type = "file"; input.accept = "image/*";
     input.onchange = async (e: any) => {
-      const file = e.target.files[0];
-      if (!file) return;
+      const file = e.target.files[0]; if (!file) return;
       const reader = new FileReader();
       reader.onload = async (f) => {
         const img = await FabricImage.fromURL(f.target?.result as string);
@@ -111,7 +110,6 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
   const flipY = () => { const o = canvas?.getActiveObject(); if (o) { o.set({ flipY: !o.flipY }); canvas?.renderAll(); } };
   const bringFront = () => { const o = canvas?.getActiveObject(); if (o && canvas) { canvas.bringObjectToFront(o); canvas.renderAll(); } };
   const sendBack = () => { const o = canvas?.getActiveObject(); if (o && canvas) { canvas.sendObjectToBack(o); canvas.renderAll(); } };
-
   const exportImage = () => {
     if (!canvas) return;
     const url = canvas.toDataURL({ format: "png", quality: 1, multiplier: 2 });
@@ -121,26 +119,22 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
   const isH = orientation === "horizontal";
   const side = isH ? "bottom" : "right";
 
-  // ── Tool button builder ────────────────────────────────────────────────────
-  const toolBtn = (
+  // ── Button factory ─────────────────────────────────────────────────────────
+  const btn = (
     icon: React.ElementType,
     tooltip: string,
     onClick: () => void,
-    opts?: { active?: boolean; danger?: boolean; key?: string }
+    opts?: { active?: boolean; danger?: boolean }
   ) => {
     const Icon = icon;
-    const active = opts?.active;
-    const danger = opts?.danger;
     return (
-      <Tooltip key={opts?.key || tooltip} delayDuration={0}>
+      <Tooltip delayDuration={0}>
         <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
+          <Button variant="ghost" size="icon"
             className={`w-8 h-8 rounded-lg transition-colors ${
-              active
+              opts?.active
                 ? "bg-primary/15 text-primary hover:bg-primary/20 ring-1 ring-primary/30"
-                : danger
+                : opts?.danger
                   ? "text-muted-foreground hover:text-red-500 hover:bg-red-50"
                   : "text-muted-foreground hover:text-primary hover:bg-secondary"
             }`}
@@ -154,9 +148,21 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
     );
   };
 
-  const divider = (key: string) => (
-    <div key={key} className={isH ? "w-px h-5 bg-border mx-0.5 shrink-0" : "h-px w-5 bg-border my-0.5 shrink-0"} />
+  // ── Grid layout helpers ────────────────────────────────────────────────────
+  // Divider spans both tracks (col-span-2 in vertical, row-span-2 in horizontal)
+  const Div = ({ k }: { k: string }) => (
+    <div key={k} className={isH
+      ? "row-span-2 w-px bg-border mx-0.5 self-stretch"
+      : "col-span-2 h-px bg-border my-0.5"
+    } />
   );
+  // Empty spacer — fills the "odd" slot so grid stays aligned
+  const Sp = () => <div className="w-8 h-8" />;
+
+  // Grid container: 2 columns (vertical) or 2 rows (horizontal, column-flow)
+  const gridCls = isH
+    ? "grid grid-rows-2 grid-flow-col gap-0.5 items-center"
+    : "grid grid-cols-2 gap-0.5";
 
   return (
     <>
@@ -166,75 +172,79 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
       >
-        <div className={`bg-card border border-border rounded-xl shadow-lg flex items-center gap-0.5 p-1.5 ${isH ? "flex-row" : "flex-col"}`}>
-
-          {/* Drag handle */}
-          <div
-            className={`flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing transition-colors ${isH ? "h-8 w-5 mr-0.5" : "w-8 h-5 mb-0.5"}`}
-            onPointerDown={onDragPointerDown}
-          >
-            {isH ? <GripHorizontal className="w-3.5 h-3.5" /> : <GripVertical className="w-3.5 h-3.5" />}
+        <div className="bg-card border border-border rounded-xl shadow-lg p-1.5">
+          {/* Drag handle + orient toggle — always a 2-slot header row */}
+          <div className={`flex ${isH ? "flex-col" : "flex-row"} gap-0.5 ${isH ? "mb-0" : "mb-0.5"}`}>
+            <div
+              className={`flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing transition-colors ${isH ? "w-8 h-5" : "w-5 h-8"}`}
+              onPointerDown={onDragPointerDown}
+            >
+              {isH ? <GripVertical className="w-3.5 h-3.5" /> : <GripHorizontal className="w-3.5 h-3.5" />}
+            </div>
+            {btn(LayoutGrid, isH ? "Вертикальный режим" : "Горизонтальный режим",
+              () => setOrientation(isH ? "vertical" : "horizontal"))}
           </div>
 
-          {/* Orientation toggle */}
-          {toolBtn(LayoutGrid, isH ? "Вертикальный режим" : "Горизонтальный режим",
-            () => setOrientation(isH ? "vertical" : "horizontal"), { key: "orient" })}
+          {/* Main 2-column / 2-row grid */}
+          <div className={gridCls}>
 
-          {divider("d0")}
+            {/* ── SELECT ── */}
+            {btn(MousePointer2, "Выбор (V / Esc)", () => onToolChange("select"), { active: activeTool === "select" })}
+            <Sp />
 
-          {/* ── SELECT ── */}
-          {toolBtn(MousePointer2, "Выбор (V)", () => onToolChange("select"),
-            { active: activeTool === "select", key: "sel" })}
+            <Div k="d0" />
 
-          {divider("d1")}
+            {/* ── SHAPES ── */}
+            {btn(Square,   "Прямоугольник",  () => onToolChange("rect"),     { active: activeTool === "rect"     })}
+            {btn(Circle,   "Эллипс",         () => onToolChange("ellipse"),  { active: activeTool === "ellipse"  })}
+            {btn(Triangle, "Треугольник",    () => onToolChange("triangle"), { active: activeTool === "triangle" })}
+            {btn(Minus,    "Линия",          () => onToolChange("line"),     { active: activeTool === "line"     })}
 
-          {/* ── SHAPE TOOLS ── */}
-          {toolBtn(Square,   "Прямоугольник", () => onToolChange("rect"),     { active: activeTool === "rect",     key: "rect" })}
-          {toolBtn(Circle,   "Эллипс",        () => onToolChange("ellipse"),  { active: activeTool === "ellipse",  key: "ell"  })}
-          {toolBtn(Triangle, "Треугольник",   () => onToolChange("triangle"), { active: activeTool === "triangle", key: "tri"  })}
-          {toolBtn(Minus,    "Линия",         () => onToolChange("line"),     { active: activeTool === "line",     key: "line" })}
+            <Div k="d1" />
 
-          {divider("d2")}
+            {/* ── OBJECTS ── */}
+            {btn(QrCode,    "Добавить QR-код",       () => setIsQrOpen(true))}
+            {btn(Type,      "Добавить текст",          addText)}
+            {btn(ImagePlus, "Добавить изображение",    addImage)}
+            <Sp />
 
-          {/* ── OBJECT TOOLS ── */}
-          {toolBtn(QrCode,    "Добавить QR-код",      () => setIsQrOpen(true), { key: "qr"  })}
-          {toolBtn(Type,      "Добавить текст",        addText,                  { key: "txt" })}
-          {toolBtn(ImagePlus, "Добавить изображение",  addImage,                 { key: "img" })}
+            <Div k="d2" />
 
-          {divider("d3")}
+            {/* ── PENCIL ── */}
+            {btn(Pencil, "Карандаш", () => onToolChange("pencil"), { active: activeTool === "pencil" })}
+            <Sp />
 
-          {/* ── DRAWING TOOLS ── */}
-          {toolBtn(Pencil, "Карандаш", () => onToolChange("pencil"), { active: activeTool === "pencil", key: "pen" })}
-          {toolBtn(Eraser, "Ластик",   () => onToolChange("eraser"), { active: activeTool === "eraser", key: "era" })}
+            <Div k="d3" />
 
-          {divider("d4")}
+            {/* ── EDIT ── */}
+            {btn(Copy,            "Дублировать",         duplicate)}
+            {btn(Trash2,          "Удалить (Del)",       remove,     { danger: true })}
+            {btn(FlipHorizontal2, "Отразить горизонт.",  flipX)}
+            {btn(FlipVertical2,   "Отразить вертикал.",  flipY)}
+            {btn(BringToFront,    "На передний план",    bringFront)}
+            {btn(SendToBack,      "На задний план",      sendBack)}
 
-          {/* ── EDIT TOOLS ── */}
-          {toolBtn(Copy,            "Дублировать",        duplicate,  { key: "dup" })}
-          {toolBtn(Trash2,          "Удалить (Del)",      remove,     { danger: true, key: "del" })}
-          {toolBtn(FlipHorizontal2, "Отразить по гориз.", flipX,      { key: "fx"  })}
-          {toolBtn(FlipVertical2,   "Отразить по верт.",  flipY,      { key: "fy"  })}
-          {toolBtn(BringToFront,    "На передний план",   bringFront, { key: "bf"  })}
-          {toolBtn(SendToBack,      "На задний план",     sendBack,   { key: "sb"  })}
+            <Div k="d4" />
 
-          {divider("d5")}
+            {/* ── HISTORY ── */}
+            {btn(Undo2, "Отменить (Ctrl+Z)", onUndo)}
+            {btn(Redo2, "Повторить (Ctrl+Y)", onRedo)}
 
-          {/* ── HISTORY ── */}
-          {toolBtn(Undo2, "Отменить (Ctrl+Z)", onUndo, { key: "undo" })}
-          {toolBtn(Redo2, "Повторить (Ctrl+Y)", onRedo, { key: "redo" })}
+            <Div k="d5" />
 
-          {divider("d6")}
+            {/* ── FILE ── */}
+            {btn(FilePlus2, "Новый дизайн",      () => setIsNewOpen(true))}
+            {btn(FolderOpen,"Открыть дизайн",    () => setIsLoadOpen(true))}
+            {btn(Save,      "Сохранить",          () => setIsSaveOpen(true))}
+            {btn(Download,  "Экспортировать PNG", exportImage)}
 
-          {/* ── FILE ── */}
-          {toolBtn(FilePlus2, "Новый дизайн",    () => setIsNewOpen(true),  { key: "new"  })}
-          {toolBtn(FolderOpen,"Открыть дизайн",  () => setIsLoadOpen(true), { key: "load" })}
-          {toolBtn(Save,      "Сохранить",        () => setIsSaveOpen(true), { key: "save" })}
-          {toolBtn(Download,  "Экспортировать PNG", exportImage,             { key: "exp"  })}
+            <Div k="d6" />
 
-          {divider("d7")}
+            {/* ── ACCOUNT ── */}
+            {btn(LogOut, "Выйти", logout, { danger: true })}
+            <Sp />
 
-          {/* ── ACCOUNT ── */}
-          {toolBtn(LogOut, "Выйти", logout, { danger: true, key: "logout" })}
+          </div>
         </div>
       </div>
 
@@ -243,7 +253,8 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
         <DialogContent className="sm:max-w-md">
           <DialogHeader><DialogTitle>Добавить QR-код</DialogTitle></DialogHeader>
           <div className="py-4">
-            <Input placeholder="Введите URL или текст" value={qrInput} onChange={(e) => setQrInput(e.target.value)}
+            <Input placeholder="Введите URL или текст" value={qrInput}
+              onChange={(e) => setQrInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addQr()} autoFocus />
           </div>
           <DialogFooter><Button onClick={addQr} disabled={!qrInput}>Сгенерировать</Button></DialogFooter>
@@ -255,8 +266,10 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
         <DialogContent className="sm:max-w-md">
           <DialogHeader><DialogTitle>Сохранить дизайн</DialogTitle></DialogHeader>
           <div className="py-4">
-            <Input placeholder="Название дизайна" value={saveTitle} onChange={(e) => setSaveTitle(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && saveTitle) { onSave(saveTitle); setIsSaveOpen(false); setSaveTitle(""); } }} autoFocus />
+            <Input placeholder="Название дизайна" value={saveTitle}
+              onChange={(e) => setSaveTitle(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && saveTitle) { onSave(saveTitle); setIsSaveOpen(false); setSaveTitle(""); } }}
+              autoFocus />
           </div>
           <DialogFooter>
             <Button onClick={() => { if (saveTitle) { onSave(saveTitle); setIsSaveOpen(false); setSaveTitle(""); } }} disabled={!saveTitle}>
@@ -295,7 +308,7 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
         </DialogContent>
       </Dialog>
 
-      {/* New Design Confirm Dialog */}
+      {/* New Design Confirm */}
       <Dialog open={isNewOpen} onOpenChange={setIsNewOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>

@@ -240,16 +240,6 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
       brush.width = penSizeRef.current;
       canvas.freeDrawingBrush = brush;
 
-    } else if (tool === "eraser") {
-      // Object-level eraser: find targets normally, don't allow selection/move
-      canvas.selection = false;
-      canvas.forEachObject((obj) => {
-        obj.selectable = false;  // Don't allow select/move
-        obj.evented = true;      // But DO allow detection as mouse target
-      });
-      canvas.defaultCursor = "cell";
-      canvas.hoverCursor = "cell";
-
     } else if (["rect", "ellipse", "line", "triangle"].includes(tool)) {
       // Shape drawing: skip target finding so clicks don't select existing objects
       canvas.skipTargetFind = true;
