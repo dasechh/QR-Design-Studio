@@ -39,6 +39,9 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
   const shapeStart = useRef({ x: 0, y: 0 });
   const currentShape = useRef<any>(null);
 
+  // Eraser state
+  const isEraserDown = useRef(false);
+
   // History
   const historyStack = useRef<string[]>([]);
   const historyIndex = useRef(-1);
@@ -68,7 +71,7 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
     }, 250);
   }, []);
 
-  // Canvas initialization
+  // Canvas initialization — runs once
   useEffect(() => {
     if (!canvasRef.current) return;
 
@@ -79,28 +82,38 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
       preserveObjectStacking: true,
     });
 
-    // Selection events — pass raw Fabric object to avoid state reset on props changes
+    // ── Selection events ────────────────────────────────────────────────────
     c.on("selection:created", (e) => setActiveObject(e.selected?.[0] ?? null));
     c.on("selection:updated", (e) => setActiveObject(e.selected?.[0] ?? null));
     c.on("selection:cleared", () => setActiveObject(null));
 
-    // History tracking
+    // ── History tracking ────────────────────────────────────────────────────
     c.on("object:added", () => pushHistory(c));
     c.on("object:modified", () => pushHistory(c));
     c.on("object:removed", () => pushHistory(c));
     c.on("path:created", () => pushHistory(c));
 
-    // Shape drawing — mouse:down
+    // ── Mouse:down — shape drawing + eraser ─────────────────────────────────
     c.on("mouse:down", (opt: any) => {
       const tool = activeToolRef.current;
+
+      // Eraser: delete the object under cursor
+      if (tool === "eraser") {
+        isEraserDown.current = true;
+        if (opt.target) {
+          c.remove(opt.target);
+          c.discardActiveObject();
+          c.renderAll();
+        }
+        return;
+      }
+
+      // Shape drawing
       if (!["rect", "ellipse", "line", "triangle"].includes(tool)) return;
-      if (opt.e.button !== 0) return;
 
       isDrawingShape.current = true;
-      c.skipTargetFind = true;
-      c.selection = false;
-
-      const p = c.getPointer(opt.e);
+      // Fabric.js 7 uses scenePoint for canvas-space coordinates
+      const p = opt.scenePoint;
       shapeStart.current = { x: p.x, y: p.y };
       const color = shapeColorRef.current;
 
@@ -122,18 +135,28 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
       }
     });
 
-    // Shape drawing — mouse:move
+    // ── Mouse:move — resize shape + eraser sweep ────────────────────────────
     c.on("mouse:move", (opt: any) => {
+      const tool = activeToolRef.current;
+
+      // Eraser sweep: remove objects the mouse passes over while pressed
+      if (tool === "eraser" && isEraserDown.current && opt.target) {
+        c.remove(opt.target);
+        c.discardActiveObject();
+        c.renderAll();
+        return;
+      }
+
+      // Shape drawing resize
       if (!isDrawingShape.current || !currentShape.current) return;
-      const p = c.getPointer(opt.e);
+      const p = opt.scenePoint;
       const { x: sx, y: sy } = shapeStart.current;
       const w = Math.abs(p.x - sx);
       const h = Math.abs(p.y - sy);
       const shape = currentShape.current;
-      const tool = activeToolRef.current;
 
       if (tool === "rect" || tool === "triangle") {
-        shape.set({ left: Math.min(p.x, sx), top: Math.min(p.y, sy), width: Math.max(1, w), height: Math.max(1, h) });
+        shape.set({ left: Math.min(p.x, sx), top: Math.min(p.y, sy), width: Math.max(2, w), height: Math.max(2, h) });
       } else if (tool === "ellipse") {
         shape.set({ left: Math.min(p.x, sx), top: Math.min(p.y, sy), rx: Math.max(1, w / 2), ry: Math.max(1, h / 2) });
       } else if (tool === "line") {
@@ -142,12 +165,12 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
       c.renderAll();
     });
 
-    // Shape drawing — mouse:up
+    // ── Mouse:up — finalize shape or eraser ─────────────────────────────────
     c.on("mouse:up", () => {
+      isEraserDown.current = false;
+
       if (!isDrawingShape.current) return;
       isDrawingShape.current = false;
-      c.skipTargetFind = false;
-      c.selection = true;
 
       if (currentShape.current) {
         c.setActiveObject(currentShape.current);
@@ -155,9 +178,11 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
         currentShape.current = null;
       }
 
-      // Auto-return to select
+      // Auto-return to select tool after drawing a shape
       activeToolRef.current = "select";
       setActiveTool("select");
+      c.skipTargetFind = false;
+      c.selection = true;
       c.defaultCursor = "default";
       c.hoverCursor = "move";
       c.forEachObject((obj) => { obj.selectable = true; obj.evented = true; });
@@ -166,7 +191,7 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
 
     setCanvas(c);
 
-    // Load initial design if any
+    // Load initial design if provided
     if (initialDesign?.canvasData) {
       isLoadingHistory.current = true;
       c.loadFromJSON(initialDesign.canvasData).then(() => {
@@ -185,28 +210,28 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
     return () => { c.dispose(); };
   }, []); // run once
 
-  // Update live brush when pen settings change
+  // Update pencil brush settings live when they change
   useEffect(() => {
-    if (!canvas) return;
-    if ((activeTool === "pencil" || activeTool === "eraser") && canvas.freeDrawingBrush) {
-      const brush = canvas.freeDrawingBrush as PencilBrush;
-      brush.color = activeTool === "eraser" ? "#ffffff" : penColor;
-      brush.width = activeTool === "eraser" ? penSize * 3 : penSize;
-    }
+    if (!canvas || activeTool !== "pencil") return;
+    const brush = canvas.freeDrawingBrush as PencilBrush | null;
+    if (brush) { brush.color = penColor; brush.width = penSize; }
   }, [penColor, penSize, activeTool, canvas]);
 
+  // ── Tool switching ──────────────────────────────────────────────────────────
   const handleToolChange = useCallback((tool: string) => {
     activeToolRef.current = tool;
     setActiveTool(tool);
     if (!canvas) return;
 
-    // Reset canvas mode
+    // Reset everything to select mode first
     canvas.isDrawingMode = false;
+    canvas.skipTargetFind = false;
+    canvas.selection = true;
     canvas.defaultCursor = "default";
     canvas.hoverCursor = "move";
-    canvas.selection = true;
-    canvas.skipTargetFind = false;
     canvas.forEachObject((obj) => { obj.selectable = true; obj.evented = true; });
+    canvas.discardActiveObject();
+    canvas.renderAll();
 
     if (tool === "pencil") {
       canvas.isDrawingMode = true;
@@ -214,19 +239,29 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
       brush.color = penColorRef.current;
       brush.width = penSizeRef.current;
       canvas.freeDrawingBrush = brush;
+
     } else if (tool === "eraser") {
-      canvas.isDrawingMode = true;
-      const brush = new PencilBrush(canvas);
-      brush.color = "#ffffff";
-      brush.width = penSizeRef.current * 3;
-      canvas.freeDrawingBrush = brush;
+      // Object-level eraser: find targets normally, don't allow selection/move
+      canvas.selection = false;
+      canvas.forEachObject((obj) => {
+        obj.selectable = false;  // Don't allow select/move
+        obj.evented = true;      // But DO allow detection as mouse target
+      });
+      canvas.defaultCursor = "cell";
+      canvas.hoverCursor = "cell";
+
     } else if (["rect", "ellipse", "line", "triangle"].includes(tool)) {
+      // Shape drawing: skip target finding so clicks don't select existing objects
+      canvas.skipTargetFind = true;
+      canvas.selection = false;
       canvas.defaultCursor = "crosshair";
       canvas.hoverCursor = "crosshair";
       canvas.forEachObject((obj) => { obj.selectable = false; obj.evented = false; });
     }
+    // "select" is the default reset state above
   }, [canvas]);
 
+  // ── History ──────────────────────────────────────────────────────────────────
   const undo = useCallback(() => {
     if (!canvas || historyIndex.current <= 0) return;
     isLoadingHistory.current = true;
@@ -234,6 +269,7 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
     const state = historyStack.current[historyIndex.current];
     canvas.loadFromJSON(JSON.parse(state)).then(() => {
       canvas.renderAll();
+      canvas.discardActiveObject();
       setActiveObject(null);
       isLoadingHistory.current = false;
     });
@@ -246,12 +282,13 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
     const state = historyStack.current[historyIndex.current];
     canvas.loadFromJSON(JSON.parse(state)).then(() => {
       canvas.renderAll();
+      canvas.discardActiveObject();
       setActiveObject(null);
       isLoadingHistory.current = false;
     });
   }, [canvas]);
 
-  // Keyboard shortcuts
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────────
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
@@ -270,6 +307,7 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [canvas, undo, redo, handleToolChange]);
 
+  // ── Design operations ─────────────────────────────────────────────────────────
   const handleNew = useCallback(() => {
     if (!canvas) return;
     canvas.clear();
@@ -307,6 +345,7 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
     canvas.loadFromJSON(design.canvasData).then(() => {
       canvas.renderAll();
       setCurrentDesignId(design.id);
+      canvas.discardActiveObject();
       setActiveObject(null);
       isLoadingHistory.current = false;
       const state = JSON.stringify(canvas.toJSON(["isQR", "qrContent"]));
@@ -343,6 +382,7 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden">
       <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header */}
         <header className="h-14 border-b border-border bg-card flex items-center justify-between px-4 shrink-0 shadow-sm">
           <button
             onClick={onBack}
@@ -361,6 +401,7 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
           )}
         </header>
 
+        {/* Canvas area */}
         <main className="flex-1 overflow-auto flex items-center justify-center p-8 bg-background">
           <div className="shadow-xl ring-1 ring-border rounded-sm overflow-hidden">
             <canvas ref={canvasRef} />

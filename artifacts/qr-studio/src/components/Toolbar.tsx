@@ -7,7 +7,7 @@ import {
   Save, FolderOpen, Download, LogOut,
   GripVertical, GripHorizontal, LayoutGrid,
   Square, Circle, Minus, Triangle, Pencil, Eraser,
-  Undo2, Redo2, FilePlus2,
+  Undo2, Redo2, FilePlus2, MousePointer2,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -60,7 +60,7 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
   };
   const onPointerUp = () => { isDragging.current = false; };
 
-  // Canvas operations
+  // ── Canvas operations ──────────────────────────────────────────────────────
   const addText = () => {
     if (!canvas) return;
     const t = new IText("Текст", { left: 100, top: 100, fontSize: 32, fill: "#222222", fontFamily: "Arial" });
@@ -121,8 +121,13 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
   const isH = orientation === "horizontal";
   const side = isH ? "bottom" : "right";
 
-  // Tool button builder
-  const toolBtn = (icon: React.ElementType, tooltip: string, onClick: () => void, opts?: { active?: boolean; danger?: boolean; key?: string }) => {
+  // ── Tool button builder ────────────────────────────────────────────────────
+  const toolBtn = (
+    icon: React.ElementType,
+    tooltip: string,
+    onClick: () => void,
+    opts?: { active?: boolean; danger?: boolean; key?: string }
+  ) => {
     const Icon = icon;
     const active = opts?.active;
     const danger = opts?.danger;
@@ -134,7 +139,7 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
             size="icon"
             className={`w-8 h-8 rounded-lg transition-colors ${
               active
-                ? "bg-primary/10 text-primary hover:bg-primary/15"
+                ? "bg-primary/15 text-primary hover:bg-primary/20 ring-1 ring-primary/30"
                 : danger
                   ? "text-muted-foreground hover:text-red-500 hover:bg-red-50"
                   : "text-muted-foreground hover:text-primary hover:bg-secondary"
@@ -150,7 +155,7 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
   };
 
   const divider = (key: string) => (
-    <div key={key} className={isH ? "w-px h-6 bg-border mx-0.5" : "h-px w-6 bg-border my-0.5"} />
+    <div key={key} className={isH ? "w-px h-5 bg-border mx-0.5 shrink-0" : "h-px w-5 bg-border my-0.5 shrink-0"} />
   );
 
   return (
@@ -162,6 +167,7 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
         onPointerUp={onPointerUp}
       >
         <div className={`bg-card border border-border rounded-xl shadow-lg flex items-center gap-0.5 p-1.5 ${isH ? "flex-row" : "flex-col"}`}>
+
           {/* Drag handle */}
           <div
             className={`flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing transition-colors ${isH ? "h-8 w-5 mr-0.5" : "w-8 h-5 mb-0.5"}`}
@@ -176,52 +182,58 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
 
           {divider("d0")}
 
-          {/* Shape tools */}
-          {toolBtn(Square, "Прямоугольник (R)", () => onToolChange("rect"), { active: activeTool === "rect", key: "rect" })}
-          {toolBtn(Circle, "Эллипс (E)", () => onToolChange("ellipse"), { active: activeTool === "ellipse", key: "ell" })}
-          {toolBtn(Triangle, "Треугольник", () => onToolChange("triangle"), { active: activeTool === "triangle", key: "tri" })}
-          {toolBtn(Minus, "Линия (L)", () => onToolChange("line"), { active: activeTool === "line", key: "line" })}
+          {/* ── SELECT ── */}
+          {toolBtn(MousePointer2, "Выбор (V)", () => onToolChange("select"),
+            { active: activeTool === "select", key: "sel" })}
 
           {divider("d1")}
 
-          {/* Object tools */}
-          {toolBtn(QrCode, "Добавить QR-код", () => setIsQrOpen(true), { key: "qr" })}
-          {toolBtn(Type, "Добавить текст (T)", addText, { key: "txt" })}
-          {toolBtn(ImagePlus, "Добавить изображение", addImage, { key: "img" })}
+          {/* ── SHAPE TOOLS ── */}
+          {toolBtn(Square,   "Прямоугольник", () => onToolChange("rect"),     { active: activeTool === "rect",     key: "rect" })}
+          {toolBtn(Circle,   "Эллипс",        () => onToolChange("ellipse"),  { active: activeTool === "ellipse",  key: "ell"  })}
+          {toolBtn(Triangle, "Треугольник",   () => onToolChange("triangle"), { active: activeTool === "triangle", key: "tri"  })}
+          {toolBtn(Minus,    "Линия",         () => onToolChange("line"),     { active: activeTool === "line",     key: "line" })}
 
           {divider("d2")}
 
-          {/* Drawing tools */}
-          {toolBtn(Pencil, "Карандаш (P)", () => onToolChange("pencil"), { active: activeTool === "pencil", key: "pen" })}
-          {toolBtn(Eraser, "Ластик (W)", () => onToolChange("eraser"), { active: activeTool === "eraser", key: "era" })}
+          {/* ── OBJECT TOOLS ── */}
+          {toolBtn(QrCode,    "Добавить QR-код",      () => setIsQrOpen(true), { key: "qr"  })}
+          {toolBtn(Type,      "Добавить текст",        addText,                  { key: "txt" })}
+          {toolBtn(ImagePlus, "Добавить изображение",  addImage,                 { key: "img" })}
 
           {divider("d3")}
 
-          {/* Edit tools */}
-          {toolBtn(Copy, "Дублировать (Ctrl+D)", duplicate, { key: "dup" })}
-          {toolBtn(Trash2, "Удалить (Del)", remove, { danger: true, key: "del" })}
-          {toolBtn(FlipHorizontal2, "Отразить горизонтально", flipX, { key: "fx" })}
-          {toolBtn(FlipVertical2, "Отразить вертикально", flipY, { key: "fy" })}
-          {toolBtn(BringToFront, "На передний план", bringFront, { key: "bf" })}
-          {toolBtn(SendToBack, "На задний план", sendBack, { key: "sb" })}
+          {/* ── DRAWING TOOLS ── */}
+          {toolBtn(Pencil, "Карандаш", () => onToolChange("pencil"), { active: activeTool === "pencil", key: "pen" })}
+          {toolBtn(Eraser, "Ластик",   () => onToolChange("eraser"), { active: activeTool === "eraser", key: "era" })}
 
           {divider("d4")}
 
-          {/* History */}
-          {toolBtn(Undo2, "Отменить (Ctrl+Z)", onUndo, { key: "undo" })}
-          {toolBtn(Redo2, "Повторить (Ctrl+Y)", onRedo, { key: "redo" })}
+          {/* ── EDIT TOOLS ── */}
+          {toolBtn(Copy,            "Дублировать",        duplicate,  { key: "dup" })}
+          {toolBtn(Trash2,          "Удалить (Del)",      remove,     { danger: true, key: "del" })}
+          {toolBtn(FlipHorizontal2, "Отразить по гориз.", flipX,      { key: "fx"  })}
+          {toolBtn(FlipVertical2,   "Отразить по верт.",  flipY,      { key: "fy"  })}
+          {toolBtn(BringToFront,    "На передний план",   bringFront, { key: "bf"  })}
+          {toolBtn(SendToBack,      "На задний план",     sendBack,   { key: "sb"  })}
 
           {divider("d5")}
 
-          {/* File operations */}
-          {toolBtn(FilePlus2, "Новый дизайн", () => setIsNewOpen(true), { key: "new" })}
-          {toolBtn(FolderOpen, "Открыть дизайн", () => setIsLoadOpen(true), { key: "load" })}
-          {toolBtn(Save, "Сохранить (Ctrl+S)", () => setIsSaveOpen(true), { key: "save" })}
-          {toolBtn(Download, "Экспортировать PNG", exportImage, { key: "exp" })}
+          {/* ── HISTORY ── */}
+          {toolBtn(Undo2, "Отменить (Ctrl+Z)", onUndo, { key: "undo" })}
+          {toolBtn(Redo2, "Повторить (Ctrl+Y)", onRedo, { key: "redo" })}
 
           {divider("d6")}
 
-          {/* Logout */}
+          {/* ── FILE ── */}
+          {toolBtn(FilePlus2, "Новый дизайн",    () => setIsNewOpen(true),  { key: "new"  })}
+          {toolBtn(FolderOpen,"Открыть дизайн",  () => setIsLoadOpen(true), { key: "load" })}
+          {toolBtn(Save,      "Сохранить",        () => setIsSaveOpen(true), { key: "save" })}
+          {toolBtn(Download,  "Экспортировать PNG", exportImage,             { key: "exp"  })}
+
+          {divider("d7")}
+
+          {/* ── ACCOUNT ── */}
           {toolBtn(LogOut, "Выйти", logout, { danger: true, key: "logout" })}
         </div>
       </div>
@@ -244,10 +256,12 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
           <DialogHeader><DialogTitle>Сохранить дизайн</DialogTitle></DialogHeader>
           <div className="py-4">
             <Input placeholder="Название дизайна" value={saveTitle} onChange={(e) => setSaveTitle(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && saveTitle) { onSave(saveTitle); setIsSaveOpen(false); } }} autoFocus />
+              onKeyDown={(e) => { if (e.key === "Enter" && saveTitle) { onSave(saveTitle); setIsSaveOpen(false); setSaveTitle(""); } }} autoFocus />
           </div>
           <DialogFooter>
-            <Button onClick={() => { if (saveTitle) { onSave(saveTitle); setIsSaveOpen(false); } }} disabled={!saveTitle}>Сохранить</Button>
+            <Button onClick={() => { if (saveTitle) { onSave(saveTitle); setIsSaveOpen(false); setSaveTitle(""); } }} disabled={!saveTitle}>
+              Сохранить
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -259,7 +273,8 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
           <ScrollArea className="flex-1 -mx-6 px-6">
             <div className="grid grid-cols-3 gap-3 pb-4">
               {designs?.map((d) => (
-                <div key={d.id} className="rounded-xl border border-border bg-card overflow-hidden hover:border-primary hover:shadow-md cursor-pointer transition-all"
+                <div key={d.id}
+                  className="rounded-xl border border-border bg-card overflow-hidden hover:border-primary hover:shadow-md cursor-pointer transition-all"
                   onClick={() => { onLoad(d); setIsLoadOpen(false); }}>
                   <div className="aspect-[4/3] bg-muted/50 p-2">
                     {d.thumbnail && <img src={d.thumbnail} alt={d.title} className="w-full h-full object-contain" />}
@@ -270,7 +285,11 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
                   </div>
                 </div>
               ))}
-              {!designs?.length && <div className="col-span-3 text-center py-12 text-muted-foreground text-sm">Нет сохранённых дизайнов</div>}
+              {!designs?.length && (
+                <div className="col-span-3 text-center py-12 text-muted-foreground text-sm">
+                  Нет сохранённых дизайнов
+                </div>
+              )}
             </div>
           </ScrollArea>
         </DialogContent>
@@ -281,7 +300,9 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Новый дизайн</DialogTitle>
-            <DialogDescription>Текущий холст будет очищен. Сначала сохраните дизайн, если хотите его сохранить.</DialogDescription>
+            <DialogDescription>
+              Текущий холст будет очищен. Сначала сохраните дизайн, если хотите его сохранить.
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setIsNewOpen(false)}>Отмена</Button>
