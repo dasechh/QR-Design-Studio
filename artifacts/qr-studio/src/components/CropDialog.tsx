@@ -1,8 +1,5 @@
 import { useState, useRef, useEffect } from "react";
 import { Canvas, FabricImage } from "fabric";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
 interface Props {
@@ -14,8 +11,8 @@ interface Props {
 
 interface CropBox { x: number; y: number; w: number; h: number; }
 
-const MAX_W = 580;
-const MAX_H = 380;
+const MAX_W = 640;
+const MAX_H = 420;
 
 export function CropDialog({ open, onClose, fabricImage, canvas }: Props) {
   const [src, setSrc] = useState("");
@@ -29,14 +26,12 @@ export function CropDialog({ open, onClose, fabricImage, canvas }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
 
-  // Load image source when dialog opens
   useEffect(() => {
     if (!open || !fabricImage) return;
     setReady(false);
+    setCrop({ x: 0, y: 0, w: 0, h: 0 });
     const el = (fabricImage as any)._element as HTMLImageElement;
-    if (el?.src) {
-      setSrc(el.src);
-    }
+    if (el?.src) setSrc(el.src);
   }, [open, fabricImage]);
 
   const onImgLoad = () => {
@@ -44,13 +39,10 @@ export function CropDialog({ open, onClose, fabricImage, canvas }: Props) {
     const natW = imgRef.current.naturalWidth;
     const natH = imgRef.current.naturalHeight;
     setNatural({ w: natW, h: natH });
-
     const scale = Math.min(MAX_W / natW, MAX_H / natH, 1);
     const pw = Math.round(natW * scale);
     const ph = Math.round(natH * scale);
     setPreview({ w: pw, h: ph });
-
-    // Show current crop as initial selection
     const cx = (fabricImage.cropX ?? 0) * scale;
     const cy = (fabricImage.cropY ?? 0) * scale;
     const cw = Math.min((fabricImage.width ?? natW), natW) * scale;
@@ -61,7 +53,7 @@ export function CropDialog({ open, onClose, fabricImage, canvas }: Props) {
 
   const clamp = (val: number, min: number, max: number) => Math.max(min, Math.min(max, val));
 
-  const getXY = (e: React.MouseEvent): { x: number; y: number } => {
+  const getXY = (e: React.MouseEvent | MouseEvent): { x: number; y: number } => {
     if (!containerRef.current) return { x: 0, y: 0 };
     const r = containerRef.current.getBoundingClientRect();
     return {
@@ -72,20 +64,32 @@ export function CropDialog({ open, onClose, fabricImage, canvas }: Props) {
 
   const onMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     const pt = getXY(e);
     startPt.current = pt;
     drawing.current = true;
     setCrop({ x: pt.x, y: pt.y, w: 0, h: 0 });
-  };
 
-  const onMouseMove = (e: React.MouseEvent) => {
-    if (!drawing.current) return;
-    const pt = getXY(e);
-    const sx = startPt.current.x, sy = startPt.current.y;
-    setCrop({ x: Math.min(pt.x, sx), y: Math.min(pt.y, sy), w: Math.abs(pt.x - sx), h: Math.abs(pt.y - sy) });
+    const onMove = (ev: MouseEvent) => {
+      if (!drawing.current) return;
+      ev.preventDefault();
+      const cur = getXY(ev);
+      const sx = startPt.current.x, sy = startPt.current.y;
+      setCrop({
+        x: Math.min(cur.x, sx),
+        y: Math.min(cur.y, sy),
+        w: Math.abs(cur.x - sx),
+        h: Math.abs(cur.y - sy),
+      });
+    };
+    const onUp = () => {
+      drawing.current = false;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
   };
-
-  const onMouseUp = () => { drawing.current = false; };
 
   const handleApply = () => {
     if (!fabricImage || !canvas || !natural.w || crop.w < 4 || crop.h < 4) return;
@@ -113,76 +117,94 @@ export function CropDialog({ open, onClose, fabricImage, canvas }: Props) {
   const cropW = Math.round(crop.w * (natural.w / (preview.w || 1)));
   const cropH = Math.round(crop.h * (natural.h / (preview.h || 1)));
 
-  return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-[680px]">
-        <DialogHeader>
-          <DialogTitle>Обрезка изображения</DialogTitle>
-        </DialogHeader>
+  if (!open) return null;
 
-        <p className="text-xs text-muted-foreground">
-          Нажмите и перетяните чтобы выбрать область. Текущий выбор: {cropW} × {cropH} пикс.
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center" style={{ userSelect: "none" }}>
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="relative z-10 bg-card border border-border rounded-2xl shadow-2xl p-6 flex flex-col gap-4"
+        style={{ width: Math.max(preview.w + 48, 400), maxWidth: "calc(100vw - 32px)" }}>
+
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold">Обрезка изображения</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-xl leading-none px-1">×</button>
+        </div>
+
+        <p className="text-xs text-muted-foreground -mt-1">
+          Нажмите и потяните чтобы выбрать область.
+          {crop.w >= 4 && crop.h >= 4 ? ` Выбрано: ${cropW} × ${cropH} пкс.` : " Область не выбрана."}
         </p>
 
-        <div className="flex justify-center my-2 overflow-hidden rounded-md bg-[#111]">
+        {/* Image + crop overlay */}
+        <div className="flex justify-center rounded-lg overflow-hidden bg-[#111] border border-border">
           {src && (
             <div
               ref={containerRef}
-              className="relative cursor-crosshair select-none"
-              style={{ width: preview.w || MAX_W, height: preview.h || MAX_H }}
+              className="relative"
+              style={{ width: preview.w || MAX_W, height: preview.h || MAX_H, cursor: "crosshair" }}
               onMouseDown={onMouseDown}
-              onMouseMove={onMouseMove}
-              onMouseUp={onMouseUp}
-              onMouseLeave={onMouseUp}
             >
               <img
                 ref={imgRef}
                 src={src}
                 onLoad={onImgLoad}
-                style={{ width: preview.w, height: preview.h, display: "block", userSelect: "none" }}
+                style={{ width: preview.w, height: preview.h, display: "block" }}
                 draggable={false}
-                alt="crop preview"
+                alt="crop"
               />
 
-              {/* Overlay darkening outside the crop box */}
               {ready && crop.w > 2 && crop.h > 2 && (
                 <>
-                  <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: crop.y, background: "rgba(0,0,0,0.55)", pointerEvents: "none" }} />
-                  <div style={{ position: "absolute", top: crop.y + crop.h, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.55)", pointerEvents: "none" }} />
-                  <div style={{ position: "absolute", top: crop.y, left: 0, width: crop.x, height: crop.h, background: "rgba(0,0,0,0.55)", pointerEvents: "none" }} />
-                  <div style={{ position: "absolute", top: crop.y, left: crop.x + crop.w, right: 0, height: crop.h, background: "rgba(0,0,0,0.55)", pointerEvents: "none" }} />
-
-                  {/* Crop border + rule-of-thirds */}
-                  <div style={{ position: "absolute", top: crop.y, left: crop.x, width: crop.w, height: crop.h, border: "2px solid white", pointerEvents: "none", boxSizing: "border-box" }}>
-                    {/* Rule of thirds guides */}
+                  <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0)" }} />
+                  {/* Dark overlay: top */}
+                  <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: crop.y, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
+                  {/* Bottom */}
+                  <div style={{ position: "absolute", top: crop.y + crop.h, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
+                  {/* Left */}
+                  <div style={{ position: "absolute", top: crop.y, left: 0, width: crop.x, height: crop.h, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
+                  {/* Right */}
+                  <div style={{ position: "absolute", top: crop.y, left: crop.x + crop.w, right: 0, height: crop.h, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
+                  {/* Crop border */}
+                  <div style={{
+                    position: "absolute", top: crop.y, left: crop.x, width: crop.w, height: crop.h,
+                    border: "2px solid white", boxSizing: "border-box", pointerEvents: "none",
+                  }}>
                     {[33.3, 66.6].map((p) => (
-                      <div key={`h${p}`} style={{ position: "absolute", top: `${p}%`, left: 0, right: 0, height: 1, background: "rgba(255,255,255,0.35)" }} />
+                      <div key={`h${p}`} style={{ position: "absolute", top: `${p}%`, left: 0, right: 0, height: 1, background: "rgba(255,255,255,0.4)" }} />
                     ))}
                     {[33.3, 66.6].map((p) => (
-                      <div key={`v${p}`} style={{ position: "absolute", left: `${p}%`, top: 0, bottom: 0, width: 1, background: "rgba(255,255,255,0.35)" }} />
+                      <div key={`v${p}`} style={{ position: "absolute", left: `${p}%`, top: 0, bottom: 0, width: 1, background: "rgba(255,255,255,0.4)" }} />
                     ))}
-                    {/* Corner handles */}
                     {[
-                      { top: -3, left: -3 }, { top: -3, right: -3 },
-                      { bottom: -3, left: -3 }, { bottom: -3, right: -3 },
+                      { top: -4, left: -4 }, { top: -4, right: -4 },
+                      { bottom: -4, left: -4 }, { bottom: -4, right: -4 },
                     ].map((s, i) => (
-                      <div key={i} style={{ position: "absolute", width: 10, height: 10, background: "white", ...s }} />
+                      <div key={i} style={{ position: "absolute", width: 8, height: 8, background: "white", borderRadius: 1, ...s }} />
                     ))}
                   </div>
                 </>
               )}
             </div>
           )}
+          {!src && (
+            <div className="flex items-center justify-center text-muted-foreground text-sm" style={{ width: MAX_W, height: 180 }}>
+              Загрузка изображения…
+            </div>
+          )}
         </div>
 
-        <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={handleReset}>Сбросить обрезку</Button>
-          <Button variant="outline" onClick={onClose}>Отмена</Button>
-          <Button onClick={handleApply} disabled={crop.w < 4 || crop.h < 4}>
+        {/* Footer buttons */}
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={handleReset}>Сбросить обрезку</Button>
+          <Button variant="outline" size="sm" onClick={onClose}>Отмена</Button>
+          <Button size="sm" onClick={handleApply} disabled={crop.w < 4 || crop.h < 4}>
             Применить
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </div>
+    </div>
   );
 }

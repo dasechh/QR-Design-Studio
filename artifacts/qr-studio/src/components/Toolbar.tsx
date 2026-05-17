@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useListDesigns } from "@workspace/api-client-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useToast } from "@/hooks/use-toast";
 
 interface ToolbarProps {
   canvas: Canvas | null;
@@ -28,12 +29,18 @@ interface ToolbarProps {
   onNew: () => void;
   onSave: (title: string) => void;
   onLoad: (design: any) => void;
+  currentDesignId: number | null;
+  currentDesignTitle: string;
 }
 
 type Orientation = "vertical" | "horizontal";
 
-export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNew, onSave, onLoad }: ToolbarProps) {
+export function Toolbar({
+  canvas, activeTool, onToolChange, onUndo, onRedo, onNew, onSave, onLoad,
+  currentDesignId, currentDesignTitle,
+}: ToolbarProps) {
   const { logout } = useAuth();
+  const { toast } = useToast();
   const [pos, setPos] = useState({ x: 16, y: 80 });
   const [orientation, setOrientation] = useState<Orientation>("vertical");
   const isDragging = useRef(false);
@@ -65,6 +72,7 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
     if (!canvas) return;
     const t = new IText("Текст", { left: 100, top: 100, fontSize: 32, fill: "#222222", fontFamily: "Arial" });
     canvas.add(t); canvas.setActiveObject(t); canvas.renderAll();
+    toast({ title: "Текст добавлен" });
   };
 
   const addImage = () => {
@@ -77,6 +85,7 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
         const img = await FabricImage.fromURL(f.target?.result as string);
         img.scaleToWidth(200);
         canvas?.add(img); canvas?.setActiveObject(img); canvas?.renderAll();
+        toast({ title: "Изображение добавлено" });
       };
       reader.readAsDataURL(file);
     };
@@ -97,6 +106,7 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
     img.scaleToWidth(200);
     canvas.add(img); canvas.setActiveObject(img); canvas.renderAll();
     setIsQrOpen(false); setQrInput("");
+    toast({ title: "QR-код добавлен" });
   };
 
   const duplicate = async () => {
@@ -108,26 +118,60 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
     ]);
     cloned.set({ left: (obj.left || 0) + 20, top: (obj.top || 0) + 20 });
     canvas.add(cloned); canvas.setActiveObject(cloned); canvas.renderAll();
+    toast({ title: "Объект скопирован" });
   };
 
   const remove = () => {
     if (!canvas) return;
+    const count = canvas.getActiveObjects().length;
+    if (!count) return;
     canvas.getActiveObjects().forEach((o) => canvas.remove(o));
     canvas.discardActiveObject(); canvas.renderAll();
+    toast({ title: count === 1 ? "Объект удалён" : `Удалено объектов: ${count}` });
   };
 
-  const flipX = () => { const o = canvas?.getActiveObject(); if (o) { o.set({ flipX: !o.flipX }); canvas?.renderAll(); } };
-  const flipY = () => { const o = canvas?.getActiveObject(); if (o) { o.set({ flipY: !o.flipY }); canvas?.renderAll(); } };
-  const bringFront = () => { const o = canvas?.getActiveObject(); if (o && canvas) { canvas.bringObjectToFront(o); canvas.renderAll(); } };
-  const sendBack = () => { const o = canvas?.getActiveObject(); if (o && canvas) { canvas.sendObjectToBack(o); canvas.renderAll(); } };
+  const flipX = () => {
+    const o = canvas?.getActiveObject();
+    if (o) { o.set({ flipX: !o.flipX }); canvas?.renderAll(); toast({ title: "Отражено по горизонтали" }); }
+  };
+  const flipY = () => {
+    const o = canvas?.getActiveObject();
+    if (o) { o.set({ flipY: !o.flipY }); canvas?.renderAll(); toast({ title: "Отражено по вертикали" }); }
+  };
+  const bringFront = () => {
+    const o = canvas?.getActiveObject();
+    if (o && canvas) { canvas.bringObjectToFront(o); canvas.renderAll(); toast({ title: "Перемещено на передний план" }); }
+  };
+  const sendBack = () => {
+    const o = canvas?.getActiveObject();
+    if (o && canvas) { canvas.sendObjectToBack(o); canvas.renderAll(); toast({ title: "Перемещено на задний план" }); }
+  };
   const exportImage = () => {
     if (!canvas) return;
     const url = canvas.toDataURL({ format: "png", quality: 1, multiplier: 2 });
     const a = document.createElement("a"); a.href = url; a.download = "design.png"; a.click();
+    toast({ title: "PNG экспортирован" });
+  };
+
+  // Smart save: skip dialog if design already exists
+  const handleSaveClick = () => {
+    if (currentDesignId && currentDesignTitle) {
+      onSave(currentDesignTitle);
+    } else {
+      setSaveTitle(currentDesignTitle || "");
+      setIsSaveOpen(true);
+    }
+  };
+
+  const confirmSave = () => {
+    if (!saveTitle.trim()) return;
+    onSave(saveTitle.trim());
+    setIsSaveOpen(false);
+    setSaveTitle("");
   };
 
   const isH = orientation === "horizontal";
-  const side = isH ? "bottom" : "right";
+  const tooltipSide = isH ? "bottom" : "right";
 
   // ── Button factory ─────────────────────────────────────────────────────────
   const btn = (
@@ -141,7 +185,7 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
       <Tooltip delayDuration={0}>
         <TooltipTrigger asChild>
           <Button variant="ghost" size="icon"
-            className={`w-8 h-8 rounded-lg transition-colors ${
+            className={`w-8 h-8 rounded-lg transition-colors shrink-0 ${
               opts?.active
                 ? "bg-primary/15 text-primary hover:bg-primary/20 ring-1 ring-primary/30"
                 : opts?.danger
@@ -153,25 +197,25 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
             <Icon className="w-4 h-4" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side={side} className="text-xs font-medium">{tooltip}</TooltipContent>
+        <TooltipContent side={tooltipSide} className="text-xs font-medium">{tooltip}</TooltipContent>
       </Tooltip>
     );
   };
 
-  // ── Grid layout helpers ────────────────────────────────────────────────────
-  const Div = ({ k }: { k: string }) => (
-    <div key={k} className={isH
-      ? "w-px h-5 bg-border mx-0.5 self-center shrink-0"
-      : "col-span-2 h-px bg-border my-0.5"
-    } />
-  );
-  // Empty spacer — fills the "odd" slot only in vertical 2-col grid
-  const Sp = () => isH ? null : <div className="w-8 h-8" />;
+  // Divider
+  const HSep = () => <div className="w-px h-5 bg-border mx-0.5 self-center shrink-0" />;
+  const VSep = () => <div className="col-span-2 h-px bg-border my-0.5" />;
+  const Sp   = () => <div className="w-8 h-8" />;
 
-  // Single row in horizontal; 2-col grid in vertical
-  const gridCls = isH
-    ? "flex flex-row gap-0.5 items-center"
-    : "grid grid-cols-2 gap-0.5";
+  // Grip handle
+  const grip = (
+    <div
+      className={`flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing transition-colors shrink-0 ${isH ? "w-6 h-8" : "w-5 h-8"}`}
+      onPointerDown={onDragPointerDown}
+    >
+      {isH ? <GripVertical className="w-3.5 h-3.5" /> : <GripHorizontal className="w-3.5 h-3.5" />}
+    </div>
+  );
 
   return (
     <>
@@ -182,78 +226,111 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
         onPointerUp={onPointerUp}
       >
         <div className="bg-card border border-border rounded-xl shadow-lg p-1.5">
-          {/* Drag handle + orient toggle — always a 2-slot header row */}
-          <div className={`flex ${isH ? "flex-col" : "flex-row"} gap-0.5 ${isH ? "mb-0" : "mb-0.5"}`}>
-            <div
-              className={`flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing transition-colors ${isH ? "w-8 h-5" : "w-5 h-8"}`}
-              onPointerDown={onDragPointerDown}
-            >
-              {isH ? <GripVertical className="w-3.5 h-3.5" /> : <GripHorizontal className="w-3.5 h-3.5" />}
+
+          {isH ? (
+            /* ── HORIZONTAL: single flex row ── */
+            <div className="flex flex-row gap-0.5 items-center">
+              {grip}
+              {btn(LayoutGrid, "Вертикальный режим", () => setOrientation("vertical"))}
+              <HSep />
+
+              {btn(MousePointer2, "Выбор (V / Esc)", () => onToolChange("select"), { active: activeTool === "select" })}
+              <HSep />
+
+              {btn(Square,   "Прямоугольник",  () => onToolChange("rect"),     { active: activeTool === "rect"     })}
+              {btn(Circle,   "Эллипс",         () => onToolChange("ellipse"),  { active: activeTool === "ellipse"  })}
+              {btn(Triangle, "Треугольник",    () => onToolChange("triangle"), { active: activeTool === "triangle" })}
+              {btn(Minus,    "Линия",          () => onToolChange("line"),     { active: activeTool === "line"     })}
+              <HSep />
+
+              {btn(QrCode,    "Добавить QR-код",       () => setIsQrOpen(true))}
+              {btn(Type,      "Добавить текст",          addText)}
+              {btn(ImagePlus, "Добавить изображение",    addImage)}
+              <HSep />
+
+              {btn(Pencil, "Карандаш", () => onToolChange("pencil"), { active: activeTool === "pencil" })}
+              <HSep />
+
+              {btn(Copy,            "Дублировать",         duplicate)}
+              {btn(Trash2,          "Удалить (Del)",       remove,     { danger: true })}
+              {btn(FlipHorizontal2, "Отразить горизонт.",  flipX)}
+              {btn(FlipVertical2,   "Отразить вертикал.",  flipY)}
+              {btn(BringToFront,    "На передний план",    bringFront)}
+              {btn(SendToBack,      "На задний план",      sendBack)}
+              <HSep />
+
+              {btn(Undo2, "Отменить (Ctrl+Z)", onUndo)}
+              {btn(Redo2, "Повторить (Ctrl+Y)", onRedo)}
+              <HSep />
+
+              {btn(FilePlus2, "Новый дизайн",      () => setIsNewOpen(true))}
+              {btn(FolderOpen,"Открыть дизайн",    () => setIsLoadOpen(true))}
+              {btn(Save,      "Сохранить",          handleSaveClick)}
+              {btn(Download,  "Экспортировать PNG", exportImage)}
+              <HSep />
+
+              {btn(LogOut, "Выйти", logout, { danger: true })}
             </div>
-            {btn(LayoutGrid, isH ? "Вертикальный режим" : "Горизонтальный режим",
-              () => setOrientation(isH ? "vertical" : "horizontal"))}
-          </div>
 
-          {/* Main 2-column / 2-row grid */}
-          <div className={gridCls}>
+          ) : (
+            /* ── VERTICAL: grip+toggle header + 2-col grid ── */
+            <>
+              <div className="flex flex-row gap-0.5 mb-0.5">
+                {grip}
+                {btn(LayoutGrid, "Горизонтальный режим", () => setOrientation("horizontal"))}
+              </div>
 
-            {/* ── SELECT ── */}
-            {btn(MousePointer2, "Выбор (V / Esc)", () => onToolChange("select"), { active: activeTool === "select" })}
-            <Sp />
+              <div className="grid grid-cols-2 gap-0.5">
+                {btn(MousePointer2, "Выбор (V / Esc)", () => onToolChange("select"), { active: activeTool === "select" })}
+                <Sp />
 
-            <Div k="d0" />
+                <VSep />
 
-            {/* ── SHAPES ── */}
-            {btn(Square,   "Прямоугольник",  () => onToolChange("rect"),     { active: activeTool === "rect"     })}
-            {btn(Circle,   "Эллипс",         () => onToolChange("ellipse"),  { active: activeTool === "ellipse"  })}
-            {btn(Triangle, "Треугольник",    () => onToolChange("triangle"), { active: activeTool === "triangle" })}
-            {btn(Minus,    "Линия",          () => onToolChange("line"),     { active: activeTool === "line"     })}
+                {btn(Square,   "Прямоугольник",  () => onToolChange("rect"),     { active: activeTool === "rect"     })}
+                {btn(Circle,   "Эллипс",         () => onToolChange("ellipse"),  { active: activeTool === "ellipse"  })}
+                {btn(Triangle, "Треугольник",    () => onToolChange("triangle"), { active: activeTool === "triangle" })}
+                {btn(Minus,    "Линия",          () => onToolChange("line"),     { active: activeTool === "line"     })}
 
-            <Div k="d1" />
+                <VSep />
 
-            {/* ── OBJECTS ── */}
-            {btn(QrCode,    "Добавить QR-код",       () => setIsQrOpen(true))}
-            {btn(Type,      "Добавить текст",          addText)}
-            {btn(ImagePlus, "Добавить изображение",    addImage)}
-            <Sp />
+                {btn(QrCode,    "Добавить QR-код",       () => setIsQrOpen(true))}
+                {btn(Type,      "Добавить текст",          addText)}
+                {btn(ImagePlus, "Добавить изображение",    addImage)}
+                <Sp />
 
-            <Div k="d2" />
+                <VSep />
 
-            {/* ── PENCIL ── */}
-            {btn(Pencil, "Карандаш", () => onToolChange("pencil"), { active: activeTool === "pencil" })}
-            <Sp />
+                {btn(Pencil, "Карандаш", () => onToolChange("pencil"), { active: activeTool === "pencil" })}
+                <Sp />
 
-            <Div k="d3" />
+                <VSep />
 
-            {/* ── EDIT ── */}
-            {btn(Copy,            "Дублировать",         duplicate)}
-            {btn(Trash2,          "Удалить (Del)",       remove,     { danger: true })}
-            {btn(FlipHorizontal2, "Отразить горизонт.",  flipX)}
-            {btn(FlipVertical2,   "Отразить вертикал.",  flipY)}
-            {btn(BringToFront,    "На передний план",    bringFront)}
-            {btn(SendToBack,      "На задний план",      sendBack)}
+                {btn(Copy,            "Дублировать",         duplicate)}
+                {btn(Trash2,          "Удалить (Del)",       remove,     { danger: true })}
+                {btn(FlipHorizontal2, "Отразить горизонт.",  flipX)}
+                {btn(FlipVertical2,   "Отразить вертикал.",  flipY)}
+                {btn(BringToFront,    "На передний план",    bringFront)}
+                {btn(SendToBack,      "На задний план",      sendBack)}
 
-            <Div k="d4" />
+                <VSep />
 
-            {/* ── HISTORY ── */}
-            {btn(Undo2, "Отменить (Ctrl+Z)", onUndo)}
-            {btn(Redo2, "Повторить (Ctrl+Y)", onRedo)}
+                {btn(Undo2, "Отменить (Ctrl+Z)", onUndo)}
+                {btn(Redo2, "Повторить (Ctrl+Y)", onRedo)}
 
-            <Div k="d5" />
+                <VSep />
 
-            {/* ── FILE ── */}
-            {btn(FilePlus2, "Новый дизайн",      () => setIsNewOpen(true))}
-            {btn(FolderOpen,"Открыть дизайн",    () => setIsLoadOpen(true))}
-            {btn(Save,      "Сохранить",          () => setIsSaveOpen(true))}
-            {btn(Download,  "Экспортировать PNG", exportImage)}
+                {btn(FilePlus2, "Новый дизайн",      () => setIsNewOpen(true))}
+                {btn(FolderOpen,"Открыть дизайн",    () => setIsLoadOpen(true))}
+                {btn(Save,      "Сохранить",          handleSaveClick)}
+                {btn(Download,  "Экспортировать PNG", exportImage)}
 
-            <Div k="d6" />
+                <VSep />
 
-            {/* ── ACCOUNT ── */}
-            {btn(LogOut, "Выйти", logout, { danger: true })}
-            <Sp />
-
-          </div>
+                {btn(LogOut, "Выйти", logout, { danger: true })}
+                <Sp />
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -270,20 +347,19 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
         </DialogContent>
       </Dialog>
 
-      {/* Save Dialog */}
+      {/* Save Dialog (only for new designs) */}
       <Dialog open={isSaveOpen} onOpenChange={setIsSaveOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader><DialogTitle>Сохранить дизайн</DialogTitle></DialogHeader>
           <div className="py-4">
             <Input placeholder="Название дизайна" value={saveTitle}
               onChange={(e) => setSaveTitle(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && saveTitle) { onSave(saveTitle); setIsSaveOpen(false); setSaveTitle(""); } }}
+              onKeyDown={(e) => { if (e.key === "Enter") confirmSave(); }}
               autoFocus />
           </div>
           <DialogFooter>
-            <Button onClick={() => { if (saveTitle) { onSave(saveTitle); setIsSaveOpen(false); setSaveTitle(""); } }} disabled={!saveTitle}>
-              Сохранить
-            </Button>
+            <Button variant="outline" onClick={() => setIsSaveOpen(false)}>Отмена</Button>
+            <Button onClick={confirmSave} disabled={!saveTitle.trim()}>Сохранить</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -323,7 +399,7 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
           <DialogHeader>
             <DialogTitle>Новый дизайн</DialogTitle>
             <DialogDescription>
-              Текущий холст будет очищен. Сначала сохраните дизайн, если хотите его сохранить.
+              Текущий холст будет очищен. Сначала сохраните дизайн, если нужно.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">

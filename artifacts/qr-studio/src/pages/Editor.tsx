@@ -26,6 +26,7 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [currentDesignId, setCurrentDesignId] = useState<number | null>(initialDesign?.id ?? null);
+  const [currentDesignTitle, setCurrentDesignTitle] = useState<string>(initialDesign?.title ?? "");
 
   // Tool state
   const [activeTool, setActiveTool] = useState("select");
@@ -309,6 +310,7 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
     canvas.backgroundColor = "#ffffff";
     canvas.renderAll();
     setCurrentDesignId(null);
+    setCurrentDesignTitle("");
     setActiveObject(null);
     const state = JSON.stringify(canvas.toJSON(EXTRA_PROPS));
     historyStack.current = [state];
@@ -322,15 +324,17 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
       const thumbnail = canvas.toDataURL({ format: "png", quality: 0.5, multiplier: 0.25 });
       if (currentDesignId) {
         await updateDesign.mutateAsync({ id: currentDesignId, data: { title, canvasData: json, thumbnail } });
-        toast({ title: "Дизайн обновлён" });
+        setCurrentDesignTitle(title);
+        toast({ title: "Дизайн сохранён", description: `«${title}» обновлён` });
       } else {
         const res = await createDesign.mutateAsync({ data: { title, canvasData: json, thumbnail } });
         setCurrentDesignId(res.id);
-        toast({ title: "Дизайн сохранён" });
+        setCurrentDesignTitle(title);
+        toast({ title: "Дизайн сохранён", description: `«${title}» добавлен в коллекцию` });
       }
       queryClient.invalidateQueries({ queryKey: getListDesignsQueryKey() });
     } catch {
-      toast({ title: "Ошибка при сохранении", variant: "destructive" });
+      toast({ title: "Ошибка при сохранении", description: "Попробуйте ещё раз", variant: "destructive" });
     }
   };
 
@@ -340,13 +344,14 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
     canvas.loadFromJSON(design.canvasData).then(() => {
       canvas.renderAll();
       setCurrentDesignId(design.id);
+      setCurrentDesignTitle(design.title ?? "");
       canvas.discardActiveObject();
       setActiveObject(null);
       isLoadingHistory.current = false;
       const state = JSON.stringify(canvas.toJSON(EXTRA_PROPS));
       historyStack.current = [state];
       historyIndex.current = 0;
-      toast({ title: "Дизайн загружен" });
+      toast({ title: "Дизайн загружен", description: `«${design.title}»` });
     });
   };
 
@@ -388,6 +393,8 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
           onNew={handleNew}
           onSave={handleSave}
           onLoad={handleLoad}
+          currentDesignId={currentDesignId}
+          currentDesignTitle={currentDesignTitle}
         />
       </div>
 
