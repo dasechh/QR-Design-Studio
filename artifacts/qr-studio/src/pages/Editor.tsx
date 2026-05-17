@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Canvas, IText, FabricImage, Shadow, Rect, Ellipse, Line, Triangle, PencilBrush } from "fabric";
-import QRCode from "qrcode";
+import { Canvas, IText, FabricImage, Rect, Ellipse, Line, Triangle, PencilBrush } from "fabric";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useCreateDesign, useUpdateDesign, getListDesignsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Toolbar } from "@/components/Toolbar";
 import { PropertiesPanel } from "@/components/PropertiesPanel";
+
+const EXTRA_PROPS = [
+  "isQR", "qrContent",
+  "qrDotColor", "qrDotStyle", "qrBgColor",
+  "qrCornerColor", "qrCornerSquareStyle", "qrCornerDotColor",
+] as const;
 
 interface EditorProps {
   initialDesign?: any | null;
@@ -61,7 +66,7 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
     if (isLoadingHistory.current) return;
     clearTimeout(saveTimeout.current);
     saveTimeout.current = setTimeout(() => {
-      const state = JSON.stringify(c.toJSON(["isQR", "qrContent"]));
+      const state = JSON.stringify(c.toJSON(EXTRA_PROPS));
       const current = historyStack.current[historyIndex.current];
       if (current === state) return;
       historyStack.current = historyStack.current.slice(0, historyIndex.current + 1);
@@ -197,12 +202,12 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
       c.loadFromJSON(initialDesign.canvasData).then(() => {
         c.renderAll();
         isLoadingHistory.current = false;
-        const state = JSON.stringify(c.toJSON(["isQR", "qrContent"]));
+        const state = JSON.stringify(c.toJSON(EXTRA_PROPS));
         historyStack.current = [state];
         historyIndex.current = 0;
       });
     } else {
-      const state = JSON.stringify(c.toJSON(["isQR", "qrContent"]));
+      const state = JSON.stringify(c.toJSON(EXTRA_PROPS));
       historyStack.current = [state];
       historyIndex.current = 0;
     }
@@ -305,7 +310,7 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
     canvas.renderAll();
     setCurrentDesignId(null);
     setActiveObject(null);
-    const state = JSON.stringify(canvas.toJSON(["isQR", "qrContent"]));
+    const state = JSON.stringify(canvas.toJSON(EXTRA_PROPS));
     historyStack.current = [state];
     historyIndex.current = 0;
   }, [canvas]);
@@ -313,7 +318,7 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
   const handleSave = async (title: string) => {
     if (!canvas) return;
     try {
-      const json = canvas.toJSON(["isQR", "qrContent"]);
+      const json = canvas.toJSON(EXTRA_PROPS);
       const thumbnail = canvas.toDataURL({ format: "png", quality: 0.5, multiplier: 0.25 });
       if (currentDesignId) {
         await updateDesign.mutateAsync({ id: currentDesignId, data: { title, canvasData: json, thumbnail } });
@@ -338,35 +343,11 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
       canvas.discardActiveObject();
       setActiveObject(null);
       isLoadingHistory.current = false;
-      const state = JSON.stringify(canvas.toJSON(["isQR", "qrContent"]));
+      const state = JSON.stringify(canvas.toJSON(EXTRA_PROPS));
       historyStack.current = [state];
       historyIndex.current = 0;
       toast({ title: "Дизайн загружен" });
     });
-  };
-
-  const handleQrUpdate = async (oldObj: any, newContent: string) => {
-    if (!canvas) return;
-    try {
-      const dataUrl = await QRCode.toDataURL(newContent, { width: 200, margin: 1 });
-      const img = await FabricImage.fromURL(dataUrl);
-      img.set({
-        left: oldObj.left, top: oldObj.top,
-        scaleX: oldObj.scaleX, scaleY: oldObj.scaleY,
-        angle: oldObj.angle,
-        shadow: oldObj.shadow ? new Shadow(oldObj.shadow) : undefined,
-        opacity: oldObj.opacity,
-      });
-      (img as any).isQR = true;
-      (img as any).qrContent = newContent;
-      canvas.remove(oldObj);
-      canvas.add(img);
-      canvas.setActiveObject(img);
-      setActiveObject(img);
-      canvas.renderAll();
-    } catch {
-      toast({ title: "Ошибка обновления QR", variant: "destructive" });
-    }
   };
 
   return (
@@ -420,7 +401,6 @@ export default function Editor({ initialDesign, onBack }: EditorProps) {
         onPenSizeChange={setPenSize}
         shapeColor={shapeColor}
         onShapeColorChange={setShapeColor}
-        onQrUpdate={handleQrUpdate}
       />
     </div>
   );

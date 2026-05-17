@@ -85,9 +85,16 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
 
   const addQr = async () => {
     if (!canvas || !qrInput) return;
-    const dataUrl = await QRCode.toDataURL(qrInput, { width: 200, margin: 1 });
+    const dataUrl = await QRCode.toDataURL(qrInput, { width: 300, margin: 1 });
     const img = await FabricImage.fromURL(dataUrl);
-    (img as any).isQR = true; (img as any).qrContent = qrInput;
+    (img as any).isQR            = true;
+    (img as any).qrContent       = qrInput;
+    (img as any).qrDotColor      = "#000000";
+    (img as any).qrDotStyle      = "square";
+    (img as any).qrBgColor       = "#ffffff";
+    (img as any).qrCornerColor   = "#000000";
+    (img as any).qrCornerStyle   = "square";
+    img.scaleToWidth(200);
     canvas.add(img); canvas.setActiveObject(img); canvas.renderAll();
     setIsQrOpen(false); setQrInput("");
   };
@@ -95,7 +102,10 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
   const duplicate = async () => {
     if (!canvas) return;
     const obj = canvas.getActiveObject(); if (!obj) return;
-    const cloned = await obj.clone(["isQR", "qrContent"]);
+    const cloned = await obj.clone([
+      "isQR", "qrContent", "qrDotColor", "qrDotStyle",
+      "qrBgColor", "qrCornerColor", "qrCornerStyle",
+    ]);
     cloned.set({ left: (obj.left || 0) + 20, top: (obj.top || 0) + 20 });
     canvas.add(cloned); canvas.setActiveObject(cloned); canvas.renderAll();
   };
@@ -149,19 +159,18 @@ export function Toolbar({ canvas, activeTool, onToolChange, onUndo, onRedo, onNe
   };
 
   // ── Grid layout helpers ────────────────────────────────────────────────────
-  // Divider spans both tracks (col-span-2 in vertical, row-span-2 in horizontal)
   const Div = ({ k }: { k: string }) => (
     <div key={k} className={isH
-      ? "row-span-2 w-px bg-border mx-0.5 self-stretch"
+      ? "w-px h-5 bg-border mx-0.5 self-center shrink-0"
       : "col-span-2 h-px bg-border my-0.5"
     } />
   );
-  // Empty spacer — fills the "odd" slot so grid stays aligned
-  const Sp = () => <div className="w-8 h-8" />;
+  // Empty spacer — fills the "odd" slot only in vertical 2-col grid
+  const Sp = () => isH ? null : <div className="w-8 h-8" />;
 
-  // Grid container: 2 columns (vertical) or 2 rows (horizontal, column-flow)
+  // Single row in horizontal; 2-col grid in vertical
   const gridCls = isH
-    ? "grid grid-rows-2 grid-flow-col gap-0.5 items-center"
+    ? "flex flex-row gap-0.5 items-center"
     : "grid grid-cols-2 gap-0.5";
 
   return (
