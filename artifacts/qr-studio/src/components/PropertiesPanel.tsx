@@ -212,6 +212,28 @@ export function PropertiesPanel({
   // Crop dialog
   const [cropOpen, setCropOpen] = useState(false);
 
+  // ── Canvas settings (shown when nothing selected) ─────────────────────────
+  const [cvW, setCvW] = useState(canvas?.width  ?? 800);
+  const [cvH, setCvH] = useState(canvas?.height ?? 600);
+  const [cvBg, setCvBg] = useState("#ffffff");
+  useEffect(() => {
+    if (!canvas) return;
+    setCvW(canvas.width  ?? 800);
+    setCvH(canvas.height ?? 600);
+    const bg = canvas.backgroundColor;
+    if (typeof bg === "string") setCvBg(bg);
+  }, [canvas]);
+  const applyCanvasSize = (w: number, h: number) => {
+    if (!canvas || w < 50 || h < 50) return;
+    canvas.setDimensions({ width: w, height: h });
+    canvas.renderAll();
+  };
+  const applyCanvasBg = (c: string) => {
+    if (!canvas) return;
+    canvas.backgroundColor = c;
+    canvas.renderAll();
+  };
+
   // ── Sync from active object ───────────────────────────────────────────────
   useEffect(() => {
     if (!activeObject) return;
@@ -434,13 +456,55 @@ export function PropertiesPanel({
       );
     }
 
+    const PRESETS: [string, number, number][] = [
+      ["800×600",   800,  600],
+      ["1280×720",  1280, 720],
+      ["1920×1080", 1920, 1080],
+      ["1080×1080", 1080, 1080],
+      ["1080×1350", 1080, 1350],
+      ["A4",        794,  1123],
+    ];
     return (
-      <div className="w-64 bg-card border-l border-border shrink-0 flex flex-col items-center justify-center text-center p-6">
-        <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center mb-3">
-          <span className="text-lg">✦</span>
+      <div className="w-64 bg-card border-l border-border shrink-0 flex flex-col overflow-y-auto">
+        <div className="px-4 py-3 border-b border-border shrink-0">
+          <p className="font-semibold text-sm">Холст</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">{cvW} × {cvH} пкс.</p>
         </div>
-        <p className="text-sm font-medium mb-1">Нет выбранного объекта</p>
-        <p className="text-xs text-muted-foreground leading-relaxed">Нажмите на элемент на холсте</p>
+        <div className="flex flex-col gap-4 p-4 text-sm">
+          <div className="space-y-2">
+            <Sec title="Размер" />
+            <div className="flex gap-2 items-center">
+              <input type="number" value={cvW} min={50} max={4096}
+                onChange={(e) => { const v = Number(e.target.value); if (v >= 50) { setCvW(v); applyCanvasSize(v, cvH); } }}
+                className="h-7 w-full rounded-md border border-border bg-muted/40 text-xs text-center px-1 focus:outline-none focus:ring-1 focus:ring-ring" />
+              <span className="text-muted-foreground text-xs shrink-0">×</span>
+              <input type="number" value={cvH} min={50} max={4096}
+                onChange={(e) => { const v = Number(e.target.value); if (v >= 50) { setCvH(v); applyCanvasSize(cvW, v); } }}
+                className="h-7 w-full rounded-md border border-border bg-muted/40 text-xs text-center px-1 focus:outline-none focus:ring-1 focus:ring-ring" />
+            </div>
+            <div className="flex flex-wrap gap-1 pt-0.5">
+              {PRESETS.map(([label, w, h]) => (
+                <button key={label}
+                  onClick={() => { setCvW(w); setCvH(h); applyCanvasSize(w, h); }}
+                  className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${cvW === w && cvH === h ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/50 text-muted-foreground hover:text-foreground"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <Divider />
+
+          <div className="space-y-2">
+            <Sec title="Фон" />
+            <ColorPicker value={cvBg} onChange={(c) => { setCvBg(c); applyCanvasBg(c); }} />
+          </div>
+
+          <Divider />
+
+          <p className="text-xs text-muted-foreground leading-relaxed">Нажмите на объект на холсте чтобы редактировать его свойства.</p>
+        </div>
       </div>
     );
   }
@@ -451,7 +515,7 @@ export function PropertiesPanel({
       <CropDialog
         open={cropOpen}
         onClose={() => setCropOpen(false)}
-        fabricImage={isImage ? (activeObject as FabricImage) : null}
+        fabricImage={isImage && !isQR ? (activeObject as FabricImage) : null}
         canvas={canvas}
       />
 
@@ -543,8 +607,8 @@ export function PropertiesPanel({
             )}
           </div>
 
-          {/* ── Image filters + crop ── */}
-          {isImage && (
+          {/* ── Image filters + crop (not for QR codes) ── */}
+          {isImage && !isQR && (
             <>
               <Divider />
               <div className="space-y-3">

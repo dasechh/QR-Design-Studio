@@ -70,8 +70,11 @@ export function Toolbar({
   // ── Canvas operations ──────────────────────────────────────────────────────
   const addText = () => {
     if (!canvas) return;
-    const t = new IText("Текст", { left: 100, top: 100, fontSize: 32, fill: "#222222", fontFamily: "Arial" });
-    canvas.add(t); canvas.setActiveObject(t); canvas.renderAll();
+    const t = new IText("Текст", { fontSize: 32, fill: "#222222", fontFamily: "Arial" });
+    canvas.add(t);
+    canvas.centerObject(t);
+    canvas.setActiveObject(t);
+    canvas.renderAll();
     toast({ title: "Текст добавлен" });
   };
 
@@ -82,9 +85,13 @@ export function Toolbar({
       const file = e.target.files[0]; if (!file) return;
       const reader = new FileReader();
       reader.onload = async (f) => {
+        if (!canvas) return;
         const img = await FabricImage.fromURL(f.target?.result as string);
-        img.scaleToWidth(200);
-        canvas?.add(img); canvas?.setActiveObject(img); canvas?.renderAll();
+        img.scaleToWidth(Math.min(200, canvas.width * 0.4));
+        canvas.add(img);
+        canvas.centerObject(img);
+        canvas.setActiveObject(img);
+        canvas.renderAll();
         toast({ title: "Изображение добавлено" });
       };
       reader.readAsDataURL(file);
@@ -104,7 +111,10 @@ export function Toolbar({
     (img as any).qrCornerColor   = "#000000";
     (img as any).qrCornerStyle   = "square";
     img.scaleToWidth(200);
-    canvas.add(img); canvas.setActiveObject(img); canvas.renderAll();
+    canvas.add(img);
+    canvas.centerObject(img);
+    canvas.setActiveObject(img);
+    canvas.renderAll();
     setIsQrOpen(false); setQrInput("");
     toast({ title: "QR-код добавлен" });
   };
